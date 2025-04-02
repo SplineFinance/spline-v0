@@ -1,2 +1,6 @@
 pub mod cauchy;
-pub mod hello; // TODO: remove this
+
+// TODO: remove below
+mod hello;
+#[cfg(test)]
+mod hello_test;
