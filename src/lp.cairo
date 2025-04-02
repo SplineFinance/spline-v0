@@ -14,9 +14,13 @@ pub trait ILiquidityProvider<TStorage> {
 
 #[starknet::contract]
 pub mod LiquidityProvider {
-    use ekubo::components::shared_locker::{call_core_with_callback, consume_callback_data};
+    use core::num::traits::Zero;
+    use ekubo::components::shared_locker::{
+        call_core_with_callback, consume_callback_data, handle_delta,
+    };
     use ekubo::interfaces::core::{ICoreDispatcher, ICoreDispatcherTrait, ILocker};
     use ekubo::types::call_points::CallPoints;
+    use ekubo::types::delta::Delta;
     use ekubo::types::i129::i129;
     use ekubo::types::keys::PoolKey;
     use openzeppelin_token::erc20::{ERC20Component, ERC20HooksEmptyImpl};
@@ -77,12 +81,13 @@ pub mod LiquidityProvider {
         fn mint(ref self: ContractState, pool_key: PoolKey, amount: u128) {
             assert(pool_key.extension == get_contract_address(), 'Extension not this contract');
 
+            // obtain core lock
             let core = self.core.read();
             let caller = get_caller_address();
-            let delta = i129 { mag: amount, sign: true };
+            let liquidity_delta = i129 { mag: amount, sign: true };
             call_core_with_callback::<
                 (PoolKey, i129, ContractAddress), (),
-            >(core, @(pool_key, delta, caller));
+            >(core, @(pool_key, liquidity_delta, caller));
 
             self.erc20.mint(caller, amount.try_into().unwrap());
         }
@@ -90,12 +95,13 @@ pub mod LiquidityProvider {
         fn burn(ref self: ContractState, pool_key: PoolKey, amount: u128) {
             assert(pool_key.extension == get_contract_address(), 'Extension not this contract');
 
+            // obtain core lock
             let core = self.core.read();
             let caller = get_caller_address();
-            let delta = i129 { mag: amount, sign: true };
+            let liquidity_delta = i129 { mag: amount, sign: true };
             call_core_with_callback::<
                 (PoolKey, i129, ContractAddress), (),
-            >(core, @(pool_key, delta, caller));
+            >(core, @(pool_key, liquidity_delta, caller));
 
             self.erc20.burn(caller, amount.try_into().unwrap());
         }
@@ -104,10 +110,39 @@ pub mod LiquidityProvider {
     #[generate_trait]
     impl InternalMethods of InternalMethodsTrait {
         fn add_liquidity(
-            self: @ContractState, core: ICoreDispatcher, payer: ContractAddress, liquidity: u128,
-        ) {}
+            self: @ContractState, pool_key: PoolKey, payer: ContractAddress, liquidity: u128,
+        ) -> Delta {
+            // TODO: modify position add liquidity on core
+            Zero::<Delta>::zero()
+        }
         fn remove_liquidity(
-            self: @ContractState, core: ICoreDispatcher, payer: ContractAddress, liquidity: u128,
-        ) {}
+            self: @ContractState, pool_key: PoolKey, recipient: ContractAddress, liquidity: u128,
+        ) -> Delta {
+            // TODO: modify position remove liquidity on core
+            Zero::<Delta>::zero()
+        }
+    }
+
+    #[abi(embed_v0)]
+    impl LockedImpl of ILocker<ContractState> {
+        fn locked(ref self: ContractState, id: u32, data: Span<felt252>) -> Span<felt252> {
+            let core = self.core.read();
+            let (pool_key, liquidity_delta, caller) = consume_callback_data::<
+                (PoolKey, i129, ContractAddress),
+            >(core, data);
+
+            let mut balance_delta = Zero::<Delta>::zero();
+            if liquidity_delta.sign {
+                balance_delta = self.add_liquidity(pool_key, caller, liquidity_delta.mag);
+            } else {
+                balance_delta = self.remove_liquidity(pool_key, caller, liquidity_delta.mag);
+            }
+
+            // settle up balance deltas with core
+            handle_delta(core, pool_key.token0, balance_delta.amount0, caller);
+            handle_delta(core, pool_key.token1, balance_delta.amount1, caller);
+
+            array![].span()
+        }
     }
 }
