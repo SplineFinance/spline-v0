@@ -25,11 +25,10 @@ pub mod LiquidityProvider {
     use ekubo::types::keys::PoolKey;
     use openzeppelin_token::erc20::{ERC20Component, ERC20HooksEmptyImpl};
     use starknet::storage::{
-        Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePathEntry,
-        StoragePointerReadAccess, StoragePointerWriteAccess,
+        Map, StorageMapReadAccess, StoragePointerReadAccess, StoragePointerWriteAccess,
     };
     use starknet::{ContractAddress, get_caller_address, get_contract_address};
-    use crate::token::{ILiquidityProviderToken, ILiquidityProviderTokenDispatcher};
+    use crate::token::{ILiquidityProviderTokenDispatcher, ILiquidityProviderTokenDispatcherTrait};
     use super::ILiquidityProvider;
 
     #[storage]
@@ -76,7 +75,7 @@ pub mod LiquidityProvider {
         fn add_liquidity(ref self: ContractState, pool_key: PoolKey, amount: u128) {
             assert(pool_key.extension == get_contract_address(), 'Extension not this contract');
 
-            // obtain core lock. should also effectively lock this contract
+            // obtain core lock. should also effectively lock this contract for unique pool key
             let core = self.core.read();
             let caller = get_caller_address();
             let liquidity_delta = i129 { mag: amount, sign: true };
@@ -85,17 +84,14 @@ pub mod LiquidityProvider {
             >(core, @(pool_key, liquidity_delta, caller));
 
             let shares = self.get_shares(pool_key, amount);
-            let pool_token = self
-                .pool_tokens
-                .entry(pool_key)
-                .read(); // TODO: check if no pool token
+            let pool_token = self.pool_tokens.read(pool_key); // TODO: check if no pool token
             pool_token.mint(caller, shares);
         }
 
         fn remove_liquidity(ref self: ContractState, pool_key: PoolKey, amount: u128) {
             assert(pool_key.extension == get_contract_address(), 'Extension not this contract');
 
-            // obtain core lock. should also effectively lock this contract
+            // obtain core lock. should also effectively lock this contract for unique pool key
             let core = self.core.read();
             let caller = get_caller_address();
             let liquidity_delta = i129 { mag: amount, sign: true };
@@ -104,10 +100,7 @@ pub mod LiquidityProvider {
             >(core, @(pool_key, liquidity_delta, caller));
 
             let shares = self.get_shares(pool_key, amount);
-            let pool_token = self
-                .pool_tokens
-                .entry(pool_key)
-                .read(); // TODO: check if no pool token
+            let pool_token = self.pool_tokens.read(pool_key); // TODO: check if no pool token
             pool_token.burn(caller, shares);
         }
     }
@@ -123,12 +116,6 @@ pub mod LiquidityProvider {
 
         fn get_shares(self: @ContractState, pool_key: PoolKey, amount: u128) -> u256 {
             Zero::<u256>::zero()
-        }
-
-        fn get_pool_token(
-            self: @ContractState, pool_key: PoolKey,
-        ) -> ILiquidityProviderTokenDispatcher {
-            self.pool_tokens.entry(pool_key)
         }
     }
 
