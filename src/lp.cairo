@@ -14,6 +14,7 @@ pub trait ILiquidityProvider<TStorage> {
 
 #[starknet::contract]
 pub mod LiquidityProvider {
+    use core::felt252_div;
     use core::num::traits::Zero;
     use ekubo::components::shared_locker::{
         call_core_with_callback, consume_callback_data, handle_delta,
@@ -23,9 +24,11 @@ pub mod LiquidityProvider {
     use ekubo::types::delta::Delta;
     use ekubo::types::i129::i129;
     use ekubo::types::keys::PoolKey;
+    use openzeppelin_token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
     use openzeppelin_token::erc20::{ERC20Component, ERC20HooksEmptyImpl};
     use starknet::storage::{
-        Map, StorageMapReadAccess, StoragePointerReadAccess, StoragePointerWriteAccess,
+        Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerReadAccess,
+        StoragePointerWriteAccess,
     };
     use starknet::{ContractAddress, get_caller_address, get_contract_address};
     use crate::token::{ILiquidityProviderTokenDispatcher, ILiquidityProviderTokenDispatcherTrait};
@@ -34,9 +37,9 @@ pub mod LiquidityProvider {
     #[storage]
     pub struct Storage {
         core: ICoreDispatcher,
-        pool_reserves: Map<ContractAddress, (u128, u128)>,
-        pool_liquidity_factors: Map<ContractAddress, u128>,
-        pool_tokens: Map<PoolKey, ILiquidityProviderTokenDispatcher>,
+        pool_reserves: Map<PoolKey, (u128, u128)>,
+        pool_liquidity_factors: Map<PoolKey, u128>,
+        pool_tokens: Map<PoolKey, ContractAddress>,
     }
 
     #[event]
@@ -83,9 +86,17 @@ pub mod LiquidityProvider {
                 (PoolKey, i129, ContractAddress), (),
             >(core, @(pool_key, liquidity_delta, caller));
 
-            let shares = self.get_shares(pool_key, amount);
             let pool_token = self.pool_tokens.read(pool_key); // TODO: check if no pool token
-            pool_token.mint(caller, shares);
+            let total_shares = IERC20Dispatcher { contract_address: pool_token }.total_supply();
+            let factor = self.pool_liquidity_factors.read(pool_key);
+            let shares = self.calculate_shares(total_shares, liquidity_delta, factor);
+
+            // add amount to liquidity factor in storage
+            let new_factor = factor + amount;
+            self.pool_liquidity_factors.write(pool_key, new_factor);
+
+            // mint pool token shares to caller
+            ILiquidityProviderTokenDispatcher { contract_address: pool_token }.mint(caller, shares);
         }
 
         fn remove_liquidity(ref self: ContractState, pool_key: PoolKey, amount: u128) {
@@ -94,14 +105,23 @@ pub mod LiquidityProvider {
             // obtain core lock. should also effectively lock this contract for unique pool key
             let core = self.core.read();
             let caller = get_caller_address();
-            let liquidity_delta = i129 { mag: amount, sign: true };
+            let liquidity_delta = i129 { mag: amount, sign: false };
             call_core_with_callback::<
                 (PoolKey, i129, ContractAddress), (),
             >(core, @(pool_key, liquidity_delta, caller));
 
-            let shares = self.get_shares(pool_key, amount);
             let pool_token = self.pool_tokens.read(pool_key); // TODO: check if no pool token
-            pool_token.burn(caller, shares);
+            let total_shares = IERC20Dispatcher { contract_address: pool_token }.total_supply();
+            let factor = self.pool_liquidity_factors.read(pool_key);
+            let shares = self.calculate_shares(total_shares, liquidity_delta, factor);
+
+            // remove amount from liquidity factor in storage
+            assert(factor >= amount, 'Not enough liquidity');
+            let new_factor = factor - amount;
+            self.pool_liquidity_factors.write(pool_key, new_factor);
+
+            // burn pool token shares from caller
+            ILiquidityProviderTokenDispatcher { contract_address: pool_token }.burn(caller, shares);
         }
     }
 
@@ -114,8 +134,32 @@ pub mod LiquidityProvider {
             Zero::<Delta>::zero()
         }
 
-        fn get_shares(self: @ContractState, pool_key: PoolKey, amount: u128) -> u256 {
-            Zero::<u256>::zero()
+        /// Calculates amount of shares to mint or burn based on liquidity delta and factor
+        /// @dev total_shares, delta, and factor are values *before* liquidity delta is applied
+        fn calculate_shares(
+            self: @ContractState, total_shares: u256, delta: i129, factor: u128,
+        ) -> u256 {
+            // TODO: fix to accomodate factor == 0 on initialize so uses initial constant for
+            // liquidity profile (fetched)
+            assert(total_shares > 0, 'Total shares is 0');
+            assert(factor > 0, 'Factor is 0');
+
+            let denom: u256 = if delta.sign {
+                factor.try_into().unwrap() + delta.mag.try_into().unwrap()
+            } else {
+                factor.try_into().unwrap()
+            };
+            let num: u256 = delta.mag.try_into().unwrap();
+            assert(num <= denom, 'Numerator > denominator');
+
+            // into felt for muldiv
+            let denom_felt252: felt252 = denom.try_into().unwrap();
+            let num_felt252: felt252 = num.try_into().unwrap();
+            let total_shares_felt252: felt252 = total_shares.try_into().unwrap();
+
+            let shares_felt252 = total_shares_felt252
+                * felt252_div(num_felt252, denom_felt252.try_into().unwrap());
+            return shares_felt252.try_into().unwrap();
         }
     }
 
