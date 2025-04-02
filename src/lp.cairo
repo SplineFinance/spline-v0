@@ -1,7 +1,7 @@
 #[starknet::interface]
 pub trait ILiquidityProvider<TStorage> {
-    fn mint(ref self: TStorage, pool_key: ekubo::types::keys::PoolKey, amount: u128);
-    fn burn(ref self: TStorage, pool_key: ekubo::types::keys::PoolKey, amount: u128);
+    fn add_liquidity(ref self: TStorage, pool_key: ekubo::types::keys::PoolKey, amount: u128);
+    fn remove_liquidity(ref self: TStorage, pool_key: ekubo::types::keys::PoolKey, amount: u128);
 }
 
 /// TODO: inherit from ekubo extension
@@ -24,22 +24,20 @@ pub mod LiquidityProvider {
     use ekubo::types::i129::i129;
     use ekubo::types::keys::PoolKey;
     use openzeppelin_token::erc20::{ERC20Component, ERC20HooksEmptyImpl};
-    use starknet::storage::{StoragePointerReadAccess, StoragePointerWriteAccess};
+    use starknet::storage::{
+        Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePathEntry,
+        StoragePointerReadAccess, StoragePointerWriteAccess,
+    };
     use starknet::{ContractAddress, get_caller_address, get_contract_address};
+    use crate::token::{ILiquidityProviderToken, ILiquidityProviderTokenDispatcher};
     use super::ILiquidityProvider;
 
-    component!(path: ERC20Component, storage: erc20, event: ERC20Event);
-
-    // ERC20 Mixin
-    #[abi(embed_v0)]
-    impl ERC20MixinImpl = ERC20Component::ERC20MixinImpl<ContractState>;
-    impl ERC20InternalImpl = ERC20Component::InternalImpl<ContractState>;
-
     #[storage]
-    struct Storage {
+    pub struct Storage {
         core: ICoreDispatcher,
-        #[substorage(v0)]
-        erc20: ERC20Component::Storage,
+        pool_reserves: Map<ContractAddress, (u128, u128)>,
+        pool_liquidity_factors: Map<ContractAddress, u128>,
+        pool_tokens: Map<PoolKey, ILiquidityProviderTokenDispatcher>,
     }
 
     #[event]
@@ -50,12 +48,9 @@ pub mod LiquidityProvider {
     }
 
     #[constructor]
-    fn constructor(
-        ref self: ContractState, pname: felt252, psymbol: felt252, core: ICoreDispatcher,
-    ) {
-        self
-            .erc20
-            .initializer(format!("Spline v0 {} LP Token", pname), format!("SPLV0-{}-LP", psymbol));
+    fn constructor(ref self: ContractState, core: ICoreDispatcher) {
+        // TODO: deploy new erc20 for each pool key initialized with ERC20 external that only
+        // LiquidityProvider can call
         self.core.write(core);
         // TODO: fix to set call points correctly
         core
@@ -64,8 +59,8 @@ pub mod LiquidityProvider {
                     before_initialize_pool: false,
                     after_initialize_pool: false,
                     before_swap: false,
-                    after_swap: false,
-                    before_update_position: false,
+                    after_swap: true,
+                    before_update_position: true,
                     after_update_position: false,
                     before_collect_fees: false,
                     after_collect_fees: false,
@@ -78,10 +73,10 @@ pub mod LiquidityProvider {
 
     #[abi(embed_v0)]
     pub impl LiquidityProviderImpl of ILiquidityProvider<ContractState> {
-        fn mint(ref self: ContractState, pool_key: PoolKey, amount: u128) {
+        fn add_liquidity(ref self: ContractState, pool_key: PoolKey, amount: u128) {
             assert(pool_key.extension == get_contract_address(), 'Extension not this contract');
 
-            // obtain core lock
+            // obtain core lock. should also effectively lock this contract
             let core = self.core.read();
             let caller = get_caller_address();
             let liquidity_delta = i129 { mag: amount, sign: true };
@@ -89,13 +84,18 @@ pub mod LiquidityProvider {
                 (PoolKey, i129, ContractAddress), (),
             >(core, @(pool_key, liquidity_delta, caller));
 
-            self.erc20.mint(caller, amount.try_into().unwrap());
+            let shares = self.get_shares(pool_key, amount);
+            let pool_token = self
+                .pool_tokens
+                .entry(pool_key)
+                .read(); // TODO: check if no pool token
+            pool_token.mint(caller, shares);
         }
 
-        fn burn(ref self: ContractState, pool_key: PoolKey, amount: u128) {
+        fn remove_liquidity(ref self: ContractState, pool_key: PoolKey, amount: u128) {
             assert(pool_key.extension == get_contract_address(), 'Extension not this contract');
 
-            // obtain core lock
+            // obtain core lock. should also effectively lock this contract
             let core = self.core.read();
             let caller = get_caller_address();
             let liquidity_delta = i129 { mag: amount, sign: true };
@@ -103,23 +103,32 @@ pub mod LiquidityProvider {
                 (PoolKey, i129, ContractAddress), (),
             >(core, @(pool_key, liquidity_delta, caller));
 
-            self.erc20.burn(caller, amount.try_into().unwrap());
+            let shares = self.get_shares(pool_key, amount);
+            let pool_token = self
+                .pool_tokens
+                .entry(pool_key)
+                .read(); // TODO: check if no pool token
+            pool_token.burn(caller, shares);
         }
     }
 
     #[generate_trait]
     impl InternalMethods of InternalMethodsTrait {
-        fn add_liquidity(
-            self: @ContractState, pool_key: PoolKey, payer: ContractAddress, liquidity: u128,
+        fn update_positions(
+            self: @ContractState, pool_key: PoolKey, payer: ContractAddress, liquidity_delta: i129,
         ) -> Delta {
             // TODO: modify position add liquidity on core
             Zero::<Delta>::zero()
         }
-        fn remove_liquidity(
-            self: @ContractState, pool_key: PoolKey, recipient: ContractAddress, liquidity: u128,
-        ) -> Delta {
-            // TODO: modify position remove liquidity on core
-            Zero::<Delta>::zero()
+
+        fn get_shares(self: @ContractState, pool_key: PoolKey, amount: u128) -> u256 {
+            Zero::<u256>::zero()
+        }
+
+        fn get_pool_token(
+            self: @ContractState, pool_key: PoolKey,
+        ) -> ILiquidityProviderTokenDispatcher {
+            self.pool_tokens.entry(pool_key)
         }
     }
 
@@ -131,12 +140,8 @@ pub mod LiquidityProvider {
                 (PoolKey, i129, ContractAddress),
             >(core, data);
 
-            let mut balance_delta = Zero::<Delta>::zero();
-            if liquidity_delta.sign {
-                balance_delta = self.add_liquidity(pool_key, caller, liquidity_delta.mag);
-            } else {
-                balance_delta = self.remove_liquidity(pool_key, caller, liquidity_delta.mag);
-            }
+            // modify liquidity profile positions on ekubo core
+            let balance_delta = self.update_positions(pool_key, caller, liquidity_delta);
 
             // settle up balance deltas with core
             handle_delta(core, pool_key.token0, balance_delta.amount0, caller);
