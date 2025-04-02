@@ -2,6 +2,11 @@
 version = 1
 
 [[package]]
+name = "ekubo"
+version = "0.1.0"
+source = "git+https://github.com/ekuboprotocol/abis#edb6de8c9baf515f1053bbab3d86825d54a63bc3"
+
+[[package]]
 name = "snforge_scarb_plugin"
 version = "0.40.0"
 source = "registry+https://scarbs.xyz/"
@@ -20,5 +25,6 @@ dependencies = [
 name = "spline_v0"
 version = "0.1.0"
 dependencies = [
+ "ekubo",
  "snforge_std",
 ]
