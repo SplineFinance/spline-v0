@@ -16,6 +16,11 @@ starknet = "2.11.2"
 snforge_std = "0.40.0"
 assert_macros = "2.11.2"
 
+[[tool.snforge.fork]]
+name = "mainnet"
+url = "https://free-rpc.nethermind.io/mainnet-juno"
+block_id.number = "910346"
+
 [[target.starknet-contract]]
 sierra = true
 

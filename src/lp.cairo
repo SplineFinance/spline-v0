@@ -14,6 +14,12 @@ pub trait ILiquidityProvider<TStorage> {
 
     /// removes an amount of liquidity factor from pool with ekubo key `pool_key`
     fn remove_liquidity(ref self: TStorage, pool_key: ekubo::types::keys::PoolKey, amount: u128);
+
+    /// returns the ekubo core for pools deployed by this liquidity provider
+    fn core(ref self: TStorage) -> ekubo::interfaces::core::ICoreDispatcher;
+
+    /// returns the profile for pools deployed by this liquidity provider
+    fn profile(ref self: TStorage) -> spline_v0::profile::ILiquidityProfileDispatcher;
 }
 
 #[starknet::contract]
@@ -68,7 +74,7 @@ pub mod LiquidityProvider {
         pool_reserves: Map<PoolKey, (u128, u128)>,
         pool_liquidity_factors: Map<PoolKey, u128>,
         pool_tokens: Map<PoolKey, ContractAddress>,
-        pool_token_class_hash: felt252,
+        pool_token_class_hash: ClassHash,
         #[substorage(v0)]
         ownable: OwnableComponent::Storage,
     }
@@ -86,7 +92,7 @@ pub mod LiquidityProvider {
         core: ICoreDispatcher,
         profile: ILiquidityProfileDispatcher,
         owner: ContractAddress,
-        pool_token_class_hash: felt252,
+        pool_token_class_hash: ClassHash,
     ) {
         self.ownable.initializer(owner);
         self.profile.write(profile);
@@ -102,7 +108,7 @@ pub mod LiquidityProvider {
                     after_initialize_pool: true,
                     before_swap: false, // TODO: set to true with fee harvesting
                     after_swap: true,
-                    before_update_position: false, // TODO: set to true with fee harvesting
+                    before_update_position: true,
                     after_update_position: true,
                     before_collect_fees: false,
                     after_collect_fees: false,
@@ -186,6 +192,14 @@ pub mod LiquidityProvider {
             // burn pool token shares from caller
             ILiquidityProviderTokenDispatcher { contract_address: pool_token }.burn(caller, shares);
         }
+
+        fn core(ref self: ContractState) -> ICoreDispatcher {
+            self.core.read()
+        }
+
+        fn profile(ref self: ContractState) -> ILiquidityProfileDispatcher {
+            self.profile.read()
+        }
     }
 
     #[generate_trait]
@@ -225,7 +239,7 @@ pub mod LiquidityProvider {
                 contract_address: UDC_ADDRESS.try_into().unwrap(),
             };
 
-            let class_hash: ClassHash = self.pool_token_class_hash.read().try_into().unwrap();
+            let class_hash: ClassHash = self.pool_token_class_hash.read();
             let (name, symbol) = self.get_pool_token_description(pool_key, profile);
             let calldata = serialize::<(ByteArray, ByteArray)>(@(name, symbol)).span();
             let salt: felt252 = poseidon_hash_span(calldata);
