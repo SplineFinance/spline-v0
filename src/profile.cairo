@@ -1,6 +1,6 @@
 #[starknet::interface]
 pub trait ILiquidityProfile<TStorage> {
-    fn set_liquidity_params(
+    fn set_liquidity_profile(
         ref self: TStorage,
         pool_key: ekubo::types::keys::PoolKey,
         params: Span<ekubo::types::i129::i129>,

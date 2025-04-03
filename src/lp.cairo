@@ -12,7 +12,7 @@ pub trait ILiquidityProvider<TStorage> {
 ///
 /// TODO: liquidity profiles are the components used in this contract
 /// TODO: fix for collect fees and compound into liquidity, likely on after swap (?) which should
-/// also increase liquidity factor
+/// TODO: also increase liquidity factor
 
 #[starknet::contract]
 pub mod LiquidityProvider {
@@ -32,23 +32,30 @@ pub mod LiquidityProvider {
         StoragePointerWriteAccess,
     };
     use starknet::{ContractAddress, get_caller_address, get_contract_address};
+    use crate::profile::{ILiquidityProfileDispatcher, ILiquidityProfileDispatcherTrait};
     use crate::token::{ILiquidityProviderTokenDispatcher, ILiquidityProviderTokenDispatcherTrait};
     use super::ILiquidityProvider;
 
     #[storage]
     pub struct Storage {
         core: ICoreDispatcher,
+        profile: ILiquidityProfileDispatcher,
         pool_reserves: Map<PoolKey, (u128, u128)>,
         pool_liquidity_factors: Map<PoolKey, u128>,
         pool_tokens: Map<PoolKey, ContractAddress>,
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, core: ICoreDispatcher) {
+    fn constructor(
+        ref self: ContractState, core: ICoreDispatcher, profile: ILiquidityProfileDispatcher,
+    ) {
+        /// TODO: must have initializer internal function to calculate and add initial liquidity
         // TODO: deploy new erc20 for each pool key initialized with ERC20 external that only
         // LiquidityProvider can call
-        self.core.write(core);
+        self.profile.write(profile);
+
         // TODO: fix to set call points correctly
+        self.core.write(core);
         core
             .set_call_points(
                 CallPoints {
@@ -62,9 +69,6 @@ pub mod LiquidityProvider {
                     after_collect_fees: false,
                 },
             );
-        /// TODO: must have initializer internal function to calculate and add initial liquidity
-    /// TODO: must have liquidity profile component or interface fed in to keep in storage
-    /// TODO: if make interface, can just call to calculate
     }
 
     #[abi(embed_v0)]
@@ -129,9 +133,17 @@ pub mod LiquidityProvider {
             payer: ContractAddress,
             liquidity_factor_delta: i129,
         ) -> Delta {
-            // TODO: modify position add liquidity on core
-            // TODO: use liquidity profile contract to get ticks to add liquidity for
-            Zero::<Delta>::zero()
+            // TODO: returned array gas cost can be high, so be careful with this
+            let core = self.core.read();
+            let profile = self.profile.read();
+            let liquidity_update_params = profile
+                .get_liquidity_updates(pool_key, liquidity_factor_delta);
+
+            let mut delta = Zero::<Delta>::zero();
+            for params in liquidity_update_params {
+                delta += core.update_position(pool_key, *params);
+            }
+            return delta;
         }
 
         /// Calculates amount of shares to mint or burn based on liquidity delta and factor
