@@ -32,10 +32,10 @@ pub mod LiquidityProviderToken {
         ERC20Event: ERC20Component::Event,
     }
 
-    // TODO: ownable mixin
     #[constructor]
-    fn constructor(ref self: ContractState) {
+    fn constructor(ref self: ContractState, name: ByteArray, symbol: ByteArray) {
         self.owner.write(get_caller_address());
+        self.erc20.initializer(name, symbol);
     }
 
     #[abi(embed_v0)]

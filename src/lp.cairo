@@ -11,6 +11,8 @@ pub trait ILiquidityProvider<TStorage> {
 /// physical amounts of x, y in contract state
 ///
 /// TODO: liquidity profiles are the components used in this contract
+/// TODO: fix for collect fees and compound into liquidity, likely on after swap (?) which should
+/// also increase liquidity factor
 
 #[starknet::contract]
 pub mod LiquidityProvider {
@@ -25,7 +27,6 @@ pub mod LiquidityProvider {
     use ekubo::types::i129::i129;
     use ekubo::types::keys::PoolKey;
     use openzeppelin_token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
-    use openzeppelin_token::erc20::{ERC20Component, ERC20HooksEmptyImpl};
     use starknet::storage::{
         Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerReadAccess,
         StoragePointerWriteAccess,
@@ -40,13 +41,6 @@ pub mod LiquidityProvider {
         pool_reserves: Map<PoolKey, (u128, u128)>,
         pool_liquidity_factors: Map<PoolKey, u128>,
         pool_tokens: Map<PoolKey, ContractAddress>,
-    }
-
-    #[event]
-    #[derive(Drop, starknet::Event)]
-    enum Event {
-        #[flat]
-        ERC20Event: ERC20Component::Event,
     }
 
     #[constructor]
@@ -81,19 +75,20 @@ pub mod LiquidityProvider {
             // obtain core lock. should also effectively lock this contract for unique pool key
             let core = self.core.read();
             let caller = get_caller_address();
-            let liquidity_delta = i129 { mag: amount, sign: true };
+            let liquidity_factor_delta = i129 { mag: amount, sign: true };
             call_core_with_callback::<
                 (PoolKey, i129, ContractAddress), (),
-            >(core, @(pool_key, liquidity_delta, caller));
+            >(core, @(pool_key, liquidity_factor_delta, caller));
 
             let pool_token = self.pool_tokens.read(pool_key); // TODO: check if no pool token
             let total_shares = IERC20Dispatcher { contract_address: pool_token }.total_supply();
-            let factor = self.pool_liquidity_factors.read(pool_key);
-            let shares = self.calculate_shares(total_shares, liquidity_delta, factor);
+            let liquidity_factor = self.pool_liquidity_factors.read(pool_key);
+            let shares = self
+                .calculate_shares(total_shares, liquidity_factor_delta, liquidity_factor);
 
             // add amount to liquidity factor in storage
-            let new_factor = factor + amount;
-            self.pool_liquidity_factors.write(pool_key, new_factor);
+            let new_liquidity_factor = liquidity_factor + amount;
+            self.pool_liquidity_factors.write(pool_key, new_liquidity_factor);
 
             // mint pool token shares to caller
             ILiquidityProviderTokenDispatcher { contract_address: pool_token }.mint(caller, shares);
@@ -105,20 +100,21 @@ pub mod LiquidityProvider {
             // obtain core lock. should also effectively lock this contract for unique pool key
             let core = self.core.read();
             let caller = get_caller_address();
-            let liquidity_delta = i129 { mag: amount, sign: false };
+            let liquidity_factor_delta = i129 { mag: amount, sign: false };
             call_core_with_callback::<
                 (PoolKey, i129, ContractAddress), (),
-            >(core, @(pool_key, liquidity_delta, caller));
+            >(core, @(pool_key, liquidity_factor_delta, caller));
 
             let pool_token = self.pool_tokens.read(pool_key); // TODO: check if no pool token
             let total_shares = IERC20Dispatcher { contract_address: pool_token }.total_supply();
-            let factor = self.pool_liquidity_factors.read(pool_key);
-            let shares = self.calculate_shares(total_shares, liquidity_delta, factor);
+            let liquidity_factor = self.pool_liquidity_factors.read(pool_key);
+            let shares = self
+                .calculate_shares(total_shares, liquidity_factor_delta, liquidity_factor);
 
             // remove amount from liquidity factor in storage
-            assert(factor >= amount, 'Not enough liquidity');
-            let new_factor = factor - amount;
-            self.pool_liquidity_factors.write(pool_key, new_factor);
+            assert(liquidity_factor >= amount, 'Not enough liquidity');
+            let new_liquidity_factor = liquidity_factor - amount;
+            self.pool_liquidity_factors.write(pool_key, new_liquidity_factor);
 
             // burn pool token shares from caller
             ILiquidityProviderTokenDispatcher { contract_address: pool_token }.burn(caller, shares);
@@ -128,14 +124,19 @@ pub mod LiquidityProvider {
     #[generate_trait]
     impl InternalMethods of InternalMethodsTrait {
         fn update_positions(
-            self: @ContractState, pool_key: PoolKey, payer: ContractAddress, liquidity_delta: i129,
+            self: @ContractState,
+            pool_key: PoolKey,
+            payer: ContractAddress,
+            liquidity_factor_delta: i129,
         ) -> Delta {
             // TODO: modify position add liquidity on core
+            // TODO: use liquidity profile contract to get ticks to add liquidity for
             Zero::<Delta>::zero()
         }
 
         /// Calculates amount of shares to mint or burn based on liquidity delta and factor
-        /// @dev total_shares, delta, and factor are values *before* liquidity delta is applied
+        /// @dev total_shares, liquidity delta, and factor are values *before* liquidity delta is
+        /// applied
         fn calculate_shares(
             self: @ContractState, total_shares: u256, delta: i129, factor: u128,
         ) -> u256 {
@@ -167,12 +168,12 @@ pub mod LiquidityProvider {
     impl LockedImpl of ILocker<ContractState> {
         fn locked(ref self: ContractState, id: u32, data: Span<felt252>) -> Span<felt252> {
             let core = self.core.read();
-            let (pool_key, liquidity_delta, caller) = consume_callback_data::<
+            let (pool_key, liquidity_factor_delta, caller) = consume_callback_data::<
                 (PoolKey, i129, ContractAddress),
             >(core, data);
 
             // modify liquidity profile positions on ekubo core
-            let balance_delta = self.update_positions(pool_key, caller, liquidity_delta);
+            let balance_delta = self.update_positions(pool_key, caller, liquidity_factor_delta);
 
             // settle up balance deltas with core
             handle_delta(core, pool_key.token0, balance_delta.amount0, caller);
