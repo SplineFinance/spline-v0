@@ -52,8 +52,6 @@ pub mod LiquidityProvider {
     use super::ILiquidityProvider;
 
     const UDC_ADDRESS: felt252 = 0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf;
-    const POOL_TOKEN_CLASS_HASH: felt252 =
-        0x0000000000000000000000000000000000000000000000000000000000000000; // TODO: add class hash for pool token
 
     component!(path: OwnableComponent, storage: ownable, event: OwnableEvent);
 
@@ -68,6 +66,7 @@ pub mod LiquidityProvider {
         pool_reserves: Map<PoolKey, (u128, u128)>,
         pool_liquidity_factors: Map<PoolKey, u128>,
         pool_tokens: Map<PoolKey, ContractAddress>,
+        pool_token_class_hash: felt252,
         #[substorage(v0)]
         ownable: OwnableComponent::Storage,
     }
@@ -85,10 +84,12 @@ pub mod LiquidityProvider {
         core: ICoreDispatcher,
         profile: ILiquidityProfileDispatcher,
         owner: ContractAddress,
+        pool_token_class_hash: felt252,
     ) {
         self.ownable.initializer(owner);
         self.profile.write(profile);
         self.core.write(core);
+        self.pool_token_class_hash.write(pool_token_class_hash);
 
         // TODO: separate fee harvester escrow or save as snapshot on ekubo so dont have issues with
         // handle_delta TODO: where transfer in assumes no balance in this contract
@@ -126,8 +127,7 @@ pub mod LiquidityProvider {
             let pool_token = self.deploy_pool_token(pool_key, profile);
             self.pool_tokens.write(pool_key, pool_token);
 
-            // initialize pool on ekubo core adding initial liquidity according to profile liquidity
-            // scalar
+            // initialize pool on ekubo core adding initial liquidity from profile
             let core = self.core.read();
             core.initialize_pool(pool_key, initial_tick);
         }
@@ -223,7 +223,7 @@ pub mod LiquidityProvider {
                 contract_address: UDC_ADDRESS.try_into().unwrap(),
             };
 
-            let class_hash: ClassHash = POOL_TOKEN_CLASS_HASH.try_into().unwrap();
+            let class_hash: ClassHash = self.pool_token_class_hash.read().try_into().unwrap();
             let (name, symbol) = self.get_pool_token_description(pool_key, profile);
             let calldata = serialize::<(ByteArray, ByteArray)>(@(name, symbol)).span();
             let salt: felt252 = poseidon_hash_span(calldata);
