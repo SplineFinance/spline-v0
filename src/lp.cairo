@@ -26,7 +26,11 @@ pub mod LiquidityProvider {
     use ekubo::components::shared_locker::{
         call_core_with_callback, consume_callback_data, handle_delta,
     };
-    use ekubo::interfaces::core::{ICoreDispatcher, ICoreDispatcherTrait, ILocker};
+    use ekubo::interfaces::core::{
+        ICoreDispatcher, ICoreDispatcherTrait, IExtension, ILocker, SwapParameters,
+        UpdatePositionParameters,
+    };
+    use ekubo::types::bounds::Bounds;
     use ekubo::types::call_points::CallPoints;
     use ekubo::types::delta::Delta;
     use ekubo::types::i129::i129;
@@ -44,7 +48,6 @@ pub mod LiquidityProvider {
 
     component!(path: OwnableComponent, storage: ownable, event: OwnableEvent);
 
-    // Ownable Mixin
     #[abi(embed_v0)]
     impl OwnableImpl = OwnableComponent::OwnableMixinImpl<ContractState>;
     impl OwnableInternalImpl = OwnableComponent::InternalImpl<ContractState>;
@@ -85,7 +88,7 @@ pub mod LiquidityProvider {
                 CallPoints {
                     before_initialize_pool: true,
                     after_initialize_pool: false,
-                    before_swap: false,
+                    before_swap: false, // TODO: set to true with fee harvesting
                     after_swap: true,
                     before_update_position: false,
                     after_update_position: true,
@@ -170,6 +173,20 @@ pub mod LiquidityProvider {
             return delta;
         }
 
+        fn update_reserves(ref self: ContractState, pool_key: PoolKey, delta: Delta) {
+            // update reserves in pool
+            let (pool_reserve0, pool_reserve1) = self.pool_reserves.read(pool_key);
+            let reserve_delta = Delta {
+                amount0: i129 { mag: pool_reserve0, sign: true },
+                amount1: i129 { mag: pool_reserve1, sign: true },
+            };
+
+            let new_reserve_delta = reserve_delta + delta;
+            self
+                .pool_reserves
+                .write(pool_key, (new_reserve_delta.amount0.mag, new_reserve_delta.amount1.mag));
+        }
+
         /// Calculates amount of shares to mint or burn based on liquidity delta and factor
         /// @dev total_shares, liquidity delta, and factor are values *before* liquidity delta is
         /// applied
@@ -216,6 +233,81 @@ pub mod LiquidityProvider {
             handle_delta(core, pool_key.token1, balance_delta.amount1, caller);
 
             array![].span()
+        }
+    }
+
+    #[abi(embed_v0)]
+    impl ExtensionImpl of IExtension<ContractState> {
+        fn before_initialize_pool(
+            ref self: ContractState, caller: ContractAddress, pool_key: PoolKey, initial_tick: i129,
+        ) {
+            assert(caller == get_contract_address(), 'Only lp can initialize');
+        }
+
+        fn after_initialize_pool(
+            ref self: ContractState, caller: ContractAddress, pool_key: PoolKey, initial_tick: i129,
+        ) {
+            panic!("Not used");
+        }
+
+        // TODO: use before and after swap to cache prior tick and final tick, then collect fees
+        // TODO: for all liquidity in between
+        fn before_swap(
+            ref self: ContractState,
+            caller: ContractAddress,
+            pool_key: PoolKey,
+            params: SwapParameters,
+        ) {
+            panic!("Not used");
+        }
+
+        fn after_swap(
+            ref self: ContractState,
+            caller: ContractAddress,
+            pool_key: PoolKey,
+            params: SwapParameters,
+            delta: Delta,
+        ) {
+            self.update_reserves(pool_key, delta);
+        }
+
+        fn before_update_position(
+            ref self: ContractState,
+            caller: ContractAddress,
+            pool_key: PoolKey,
+            params: UpdatePositionParameters,
+        ) {
+            assert(caller == get_contract_address(), 'Only lp can update position');
+        }
+
+        fn after_update_position(
+            ref self: ContractState,
+            caller: ContractAddress,
+            pool_key: PoolKey,
+            params: UpdatePositionParameters,
+            delta: Delta,
+        ) {
+            self.update_reserves(pool_key, delta);
+        }
+
+        fn before_collect_fees(
+            ref self: ContractState,
+            caller: ContractAddress,
+            pool_key: PoolKey,
+            salt: felt252,
+            bounds: Bounds,
+        ) {
+            panic!("Not used");
+        }
+        fn after_collect_fees(
+            ref self: ContractState,
+            caller: ContractAddress,
+            pool_key: PoolKey,
+            salt: felt252,
+            bounds: Bounds,
+            delta: Delta,
+        ) {
+            panic!("Not used");
         }
     }
 }
