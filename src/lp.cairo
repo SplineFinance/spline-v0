@@ -8,8 +8,10 @@ pub trait ILiquidityProvider<TStorage> {
         initial_tick: ekubo::types::i129::i129,
         profile_params: Span<ekubo::types::i129::i129>,
     );
+
     /// adds an amount of liquidity factor to pool with ekubo key `pool_key`
     fn add_liquidity(ref self: TStorage, pool_key: ekubo::types::keys::PoolKey, amount: u128);
+
     /// removes an amount of liquidity factor from pool with ekubo key `pool_key`
     fn remove_liquidity(ref self: TStorage, pool_key: ekubo::types::keys::PoolKey, amount: u128);
 }
@@ -87,14 +89,17 @@ pub mod LiquidityProvider {
         self.ownable.initializer(owner);
         self.profile.write(profile);
         self.core.write(core);
+
+        // TODO: separate fee harvester escrow or save as snapshot on ekubo so dont have issues with
+        // handle_delta TODO: where transfer in assumes no balance in this contract
         core
             .set_call_points(
                 CallPoints {
                     before_initialize_pool: true,
-                    after_initialize_pool: false,
+                    after_initialize_pool: true,
                     before_swap: false, // TODO: set to true with fee harvesting
                     after_swap: true,
-                    before_update_position: false,
+                    before_update_position: false, // TODO: set to true with fee harvesting
                     after_update_position: true,
                     before_collect_fees: false,
                     after_collect_fees: false,
@@ -121,10 +126,10 @@ pub mod LiquidityProvider {
             let pool_token = self.deploy_pool_token(pool_key, profile);
             self.pool_tokens.write(pool_key, pool_token);
 
-            // initialize pool on ekubo core
+            // initialize pool on ekubo core adding initial liquidity according to profile liquidity
+            // scalar
             let core = self.core.read();
             core.initialize_pool(pool_key, initial_tick);
-            // TODO: add initial liquidity using liquidity scalar
         }
 
         fn add_liquidity(ref self: ContractState, pool_key: PoolKey, amount: u128) {
@@ -210,6 +215,7 @@ pub mod LiquidityProvider {
             let symbol = format!("SPLV0-{}/{}-{}-LP", token0_symbol, token1_symbol, profile_symbol);
             return (name, symbol);
         }
+
         fn deploy_pool_token(
             ref self: ContractState, pool_key: PoolKey, profile: ILiquidityProfileDispatcher,
         ) -> ContractAddress {
@@ -232,18 +238,15 @@ pub mod LiquidityProvider {
         }
 
         fn update_positions(
-            self: @ContractState,
-            pool_key: PoolKey,
-            payer: ContractAddress,
-            liquidity_factor_delta: i129,
+            self: @ContractState, pool_key: PoolKey, liquidity_factor_delta: i129,
         ) -> Delta {
-            // TODO: returned array gas cost can be high, so be careful with this
             let core = self.core.read();
             let profile = self.profile.read();
             let liquidity_update_params = profile
                 .get_liquidity_updates(pool_key, liquidity_factor_delta);
 
             let mut delta = Zero::<Delta>::zero();
+            // @dev length of returned array can cause gas cost to be high, so be careful with this
             for params in liquidity_update_params {
                 delta += core.update_position(pool_key, *params);
             }
@@ -270,8 +273,6 @@ pub mod LiquidityProvider {
         fn calculate_shares(
             self: @ContractState, total_shares: u256, delta: i129, factor: u128,
         ) -> u256 {
-            // TODO: fix to accomodate factor == 0 on initialize so uses initial constant for
-            // liquidity profile (fetched)
             assert(total_shares > 0, 'Total shares is 0');
             assert(factor > 0, 'Factor is 0');
 
@@ -303,7 +304,7 @@ pub mod LiquidityProvider {
             >(core, data);
 
             // modify liquidity profile positions on ekubo core
-            let balance_delta = self.update_positions(pool_key, caller, liquidity_factor_delta);
+            let balance_delta = self.update_positions(pool_key, liquidity_factor_delta);
 
             // settle up balance deltas with core
             handle_delta(core, pool_key.token0, balance_delta.amount0, caller);
@@ -321,10 +322,27 @@ pub mod LiquidityProvider {
             assert(caller == get_contract_address(), 'Only lp can initialize');
         }
 
+        // adds initial liquidity to pool according to profile liquidity scalar
         fn after_initialize_pool(
             ref self: ContractState, caller: ContractAddress, pool_key: PoolKey, initial_tick: i129,
         ) {
-            panic!("Not used");
+            let profile = self.profile.read();
+            let initial_liquidity_factor = profile.initial_liquidity_factor(pool_key, initial_tick);
+
+            let core = self.core.read();
+            let liquidity_factor_delta = i129 { mag: initial_liquidity_factor, sign: true };
+            call_core_with_callback::<
+                (PoolKey, i129, ContractAddress), (),
+            >(core, @(pool_key, liquidity_factor_delta, caller));
+
+            // add liquidity factor in storage
+            self.pool_liquidity_factors.write(pool_key, initial_liquidity_factor);
+
+            // mint pool token shares to this address (burning initial lp tokens) as caller is this
+            // contract
+            let pool_token = self.pool_tokens.read(pool_key);
+            ILiquidityProviderTokenDispatcher { contract_address: pool_token }
+                .mint(caller, initial_liquidity_factor.try_into().unwrap());
         }
 
         // TODO: use before and after swap to cache prior tick and final tick, then collect fees
