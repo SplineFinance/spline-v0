@@ -32,34 +32,34 @@ fn test_constructor_sets_name_and_symbol() {
 }
 
 #[test]
-fn test_initialize_sets_owner() {
+fn test_initialize_sets_authority() {
     let token = setup();
-    let owner = get_contract_address();
-    token.initialize(owner);
-    assert_eq!(token.owner(), owner);
+    let auth = get_contract_address();
+    token.initialize(auth);
+    assert_eq!(token.authority(), auth);
 }
 
 #[test]
 #[should_panic(expected: ('Already initialized',))]
 fn test_initialize_fails_if_already_initialized() {
     let token = setup();
-    let owner = get_contract_address();
-    token.initialize(owner);
+    let auth = get_contract_address();
+    token.initialize(auth);
     token.initialize(token.contract_address);
 }
 
 #[test]
 fn test_mint_mints_funds() {
     let token = setup();
-    let owner = get_contract_address();
-    token.initialize(owner);
+    let auth = get_contract_address();
+    token.initialize(auth);
 
     let token_erc20 = IERC20Dispatcher { contract_address: token.contract_address };
     assert_eq!(token_erc20.balance_of(token.contract_address), 0);
 
     let amount = 100;
-    token.mint(owner, amount);
-    assert_eq!(token_erc20.balance_of(owner), amount);
+    token.mint(auth, amount);
+    assert_eq!(token_erc20.balance_of(auth), amount);
     assert_eq!(token_erc20.total_supply(), amount);
 
     token.mint(token.contract_address, amount);
@@ -68,42 +68,42 @@ fn test_mint_mints_funds() {
 }
 
 #[test]
-#[should_panic(expected: ('Not owner',))]
-fn test_mint_fails_if_not_owner() {
+#[should_panic(expected: ('Not authority',))]
+fn test_mint_fails_if_not_authority() {
     let token = setup();
-    let owner = get_contract_address();
-    token.mint(owner, 100);
+    let auth = get_contract_address();
+    token.mint(auth, 100);
 }
 
 #[test]
 fn test_burn_burns_funds() {
     let token = setup();
-    let owner = get_contract_address();
-    token.initialize(owner);
-    token.mint(owner, 100);
+    let auth = get_contract_address();
+    token.initialize(auth);
+    token.mint(auth, 100);
     token.mint(token.contract_address, 100);
 
     let token_erc20 = IERC20Dispatcher { contract_address: token.contract_address };
     assert_eq!(token_erc20.total_supply(), 200);
-    assert_eq!(token_erc20.balance_of(owner), 100);
+    assert_eq!(token_erc20.balance_of(auth), 100);
     assert_eq!(token_erc20.balance_of(token.contract_address), 100);
 
     let amount = 50;
-    token.burn(owner, amount);
-    assert_eq!(token_erc20.balance_of(owner), 50);
+    token.burn(auth, amount);
+    assert_eq!(token_erc20.balance_of(auth), 50);
     assert_eq!(token_erc20.balance_of(token.contract_address), 100);
     assert_eq!(token_erc20.total_supply(), 150);
 
     token.burn(token.contract_address, amount);
-    assert_eq!(token_erc20.balance_of(owner), 50);
+    assert_eq!(token_erc20.balance_of(auth), 50);
     assert_eq!(token_erc20.balance_of(token.contract_address), 50);
     assert_eq!(token_erc20.total_supply(), 100);
 }
 
 #[test]
-#[should_panic(expected: ('Not owner',))]
-fn test_burn_fails_if_not_owner() {
+#[should_panic(expected: ('Not authority',))]
+fn test_burn_fails_if_not_authority() {
     let token = setup();
-    let owner = get_contract_address();
-    token.burn(owner, 100);
+    let auth = get_contract_address();
+    token.burn(auth, 100);
 }

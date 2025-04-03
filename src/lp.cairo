@@ -233,8 +233,9 @@ pub mod LiquidityProvider {
             let pool_token = dispatcher.deploy_contract(class_hash, salt, true, calldata);
             self.pool_tokens.write(pool_key, pool_token);
 
-            let owner = get_caller_address();
-            ILiquidityProviderTokenDispatcher { contract_address: pool_token }.initialize(owner);
+            let authority = get_caller_address();
+            ILiquidityProviderTokenDispatcher { contract_address: pool_token }
+                .initialize(authority);
 
             return pool_token;
         }

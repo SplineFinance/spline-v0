@@ -1,10 +1,10 @@
 #[starknet::interface]
 pub trait ILiquidityProviderToken<TStorage> {
     // returns the mint/burn authority of the lp token
-    fn owner(ref self: TStorage) -> starknet::ContractAddress;
+    fn authority(ref self: TStorage) -> starknet::ContractAddress;
 
-    // initializes lp token with owner
-    fn initialize(ref self: TStorage, owner: starknet::ContractAddress);
+    // initializes lp token with authority
+    fn initialize(ref self: TStorage, authority: starknet::ContractAddress);
 
     // mints an amount of lp tokens to `to`
     fn mint(ref self: TStorage, to: starknet::ContractAddress, amount: u256);
@@ -29,7 +29,7 @@ pub mod LiquidityProviderToken {
 
     #[storage]
     struct Storage {
-        owner: ContractAddress,
+        authority: ContractAddress,
         #[substorage(v0)]
         erc20: ERC20Component::Storage,
     }
@@ -48,25 +48,25 @@ pub mod LiquidityProviderToken {
 
     #[abi(embed_v0)]
     pub impl LiquidityProviderTokenImpl of ILiquidityProviderToken<ContractState> {
-        fn owner(ref self: ContractState) -> ContractAddress {
-            self.owner.read()
+        fn authority(ref self: ContractState) -> ContractAddress {
+            self.authority.read()
         }
 
-        fn initialize(ref self: ContractState, owner: ContractAddress) {
+        fn initialize(ref self: ContractState, authority: ContractAddress) {
             assert(
-                self.owner.read() == Zero::<starknet::ContractAddress>::zero(),
+                self.authority.read() == Zero::<starknet::ContractAddress>::zero(),
                 'Already initialized',
             );
-            self.owner.write(owner);
+            self.authority.write(authority);
         }
 
         fn mint(ref self: ContractState, to: ContractAddress, amount: u256) {
-            assert(self.owner.read() == get_caller_address(), 'Not owner');
+            assert(self.authority.read() == get_caller_address(), 'Not authority');
             self.erc20.mint(to, amount);
         }
 
         fn burn(ref self: ContractState, from: ContractAddress, amount: u256) {
-            assert(self.owner.read() == get_caller_address(), 'Not owner');
+            assert(self.authority.read() == get_caller_address(), 'Not authority');
             self.erc20.burn(from, amount);
         }
     }
