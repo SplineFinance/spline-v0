@@ -55,7 +55,7 @@ pub mod TestProfile {
                         lower: i129 { mag: i * step, sign: false },
                         upper: i129 { mag: i * step, sign: true },
                     },
-                    liquidity_delta: liquidity_factor / i129 { mag: (1 + i * step), sign: true },
+                    liquidity_delta: liquidity_factor / i129 { mag: (1 + i), sign: true },
                 };
                 updates.append(update_params);
             }
