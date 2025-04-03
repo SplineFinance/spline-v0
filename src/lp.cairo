@@ -85,13 +85,7 @@ pub mod LiquidityProvider {
         owner: ContractAddress,
     ) {
         self.ownable.initializer(owner);
-
-        /// TODO: must have initializer internal function to calculate and add initial liquidity
-        // TODO: deploy new erc20 for each pool key initialized with ERC20 external that only
-        // LiquidityProvider can call
         self.profile.write(profile);
-
-        // TODO: fix to set call points correctly
         self.core.write(core);
         core
             .set_call_points(
@@ -117,7 +111,7 @@ pub mod LiquidityProvider {
             profile_params: Span<i129>,
         ) {
             self.ownable.assert_only_owner();
-            assert(pool_key.extension == get_contract_address(), 'Extension not this contract');
+            self.check_pool_key(pool_key);
 
             // set liquidity profile parameters
             let profile = self.profile.read();
@@ -134,7 +128,8 @@ pub mod LiquidityProvider {
         }
 
         fn add_liquidity(ref self: ContractState, pool_key: PoolKey, amount: u128) {
-            assert(pool_key.extension == get_contract_address(), 'Extension not this contract');
+            self.check_pool_key(pool_key);
+            self.check_pool_initialized(pool_key);
 
             // obtain core lock. should also effectively lock this contract for unique pool key
             let core = self.core.read();
@@ -144,7 +139,7 @@ pub mod LiquidityProvider {
                 (PoolKey, i129, ContractAddress), (),
             >(core, @(pool_key, liquidity_factor_delta, caller));
 
-            let pool_token = self.pool_tokens.read(pool_key); // TODO: check if no pool token
+            let pool_token = self.pool_tokens.read(pool_key);
             let total_shares = IERC20Dispatcher { contract_address: pool_token }.total_supply();
             let liquidity_factor = self.pool_liquidity_factors.read(pool_key);
             let shares = self
@@ -159,7 +154,8 @@ pub mod LiquidityProvider {
         }
 
         fn remove_liquidity(ref self: ContractState, pool_key: PoolKey, amount: u128) {
-            assert(pool_key.extension == get_contract_address(), 'Extension not this contract');
+            self.check_pool_key(pool_key);
+            self.check_pool_initialized(pool_key);
 
             // obtain core lock. should also effectively lock this contract for unique pool key
             let core = self.core.read();
@@ -169,7 +165,7 @@ pub mod LiquidityProvider {
                 (PoolKey, i129, ContractAddress), (),
             >(core, @(pool_key, liquidity_factor_delta, caller));
 
-            let pool_token = self.pool_tokens.read(pool_key); // TODO: check if no pool token
+            let pool_token = self.pool_tokens.read(pool_key);
             let total_shares = IERC20Dispatcher { contract_address: pool_token }.total_supply();
             let liquidity_factor = self.pool_liquidity_factors.read(pool_key);
             let shares = self
@@ -187,6 +183,17 @@ pub mod LiquidityProvider {
 
     #[generate_trait]
     impl InternalMethods of InternalMethodsTrait {
+        fn check_pool_key(ref self: ContractState, pool_key: PoolKey) {
+            assert(pool_key.extension == get_contract_address(), 'Extension not this contract');
+        }
+
+        fn check_pool_initialized(ref self: ContractState, pool_key: PoolKey) {
+            assert(
+                self.pool_tokens.read(pool_key) != Zero::<ContractAddress>::zero(),
+                'Pool token not deployed',
+            );
+        }
+
         fn get_pool_token_description(
             ref self: ContractState, pool_key: PoolKey, profile: ILiquidityProfileDispatcher,
         ) -> (ByteArray, ByteArray) {
