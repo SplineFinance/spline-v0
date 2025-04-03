@@ -1,11 +1,16 @@
 #[starknet::interface]
 pub trait ILiquidityProviderToken<TStorage> {
+    // initializes lp token with owner
+    fn initialize(ref self: TStorage, owner: starknet::ContractAddress);
+    // mints an amount of lp tokens to `to`
     fn mint(ref self: TStorage, to: starknet::ContractAddress, amount: u256);
+    // burns an amount of lp tokens from `from`
     fn burn(ref self: TStorage, from: starknet::ContractAddress, amount: u256);
 }
 
 #[starknet::contract]
 pub mod LiquidityProviderToken {
+    use core::num::traits::Zero;
     use openzeppelin_token::erc20::{ERC20Component, ERC20HooksEmptyImpl};
     use starknet::storage::{StoragePointerReadAccess, StoragePointerWriteAccess};
     use starknet::{ContractAddress, get_caller_address};
@@ -33,12 +38,19 @@ pub mod LiquidityProviderToken {
 
     #[constructor]
     fn constructor(ref self: ContractState, name: ByteArray, symbol: ByteArray) {
-        self.owner.write(get_caller_address());
         self.erc20.initializer(name, symbol);
     }
 
     #[abi(embed_v0)]
     pub impl LiquidityProviderTokenImpl of ILiquidityProviderToken<ContractState> {
+        fn initialize(ref self: ContractState, owner: ContractAddress) {
+            assert(
+                self.owner.read() == Zero::<starknet::ContractAddress>::zero(),
+                'Already initialized',
+            );
+            self.owner.write(owner);
+        }
+
         fn mint(ref self: ContractState, to: ContractAddress, amount: u256) {
             assert(self.owner.read() == get_caller_address(), 'Not owner');
             self.erc20.mint(to, amount);

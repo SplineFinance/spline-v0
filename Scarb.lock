@@ -72,5 +72,6 @@ dependencies = [
  "ekubo",
  "openzeppelin_access",
  "openzeppelin_token",
+ "openzeppelin_utils",
  "snforge_std",
 ]

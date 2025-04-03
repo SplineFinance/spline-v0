@@ -1,31 +1,28 @@
 #[starknet::interface]
 pub trait ILiquidityProvider<TStorage> {
+    /// creates and initializes a pool with ekubo key `pool_key` with initial tick `initial_tick`.
+    /// only owner of liquidity provider can initialize
+    fn create_and_initialize_pool(
+        ref self: TStorage,
+        pool_key: ekubo::types::keys::PoolKey,
+        initial_tick: ekubo::types::i129::i129,
+        profile_params: Span<ekubo::types::i129::i129>,
+    );
+    /// adds an amount of liquidity factor to pool with ekubo key `pool_key`
     fn add_liquidity(ref self: TStorage, pool_key: ekubo::types::keys::PoolKey, amount: u128);
+    /// removes an amount of liquidity factor from pool with ekubo key `pool_key`
     fn remove_liquidity(ref self: TStorage, pool_key: ekubo::types::keys::PoolKey, amount: u128);
 }
-
-/// TODO: inherit from ekubo extension
-/// TODO: mint should take in x, y desired amounts and use dL / L = dy / y = dx / x to calculate
-/// amount of lp tokens to mint TODO: burn should take in amount of lp tokens and use L = L0 + x * y
-/// / (x + dx) to calculate amount of x, y to burn TODO: afterSwap hook should store updates
-/// physical amounts of x, y in contract state
-///
-/// TODO: liquidity profiles are the components used in this contract
-/// TODO: fix for collect fees and compound into liquidity, likely on after swap (?) which should
-/// TODO: also increase liquidity factor
-///
-/// TODO: for fees, should afterSwap always collect swap fees from the positions swapped through and
-/// escrow in this contract TODO: then have harvest function that attempts to auto compund
-/// calculating liquidity factor delta from fees using reserve TODO: balances in contract storage.
-/// reserve balances should be updated also on afterSwap and afterUpdatePosition
 
 #[starknet::contract]
 pub mod LiquidityProvider {
     use core::felt252_div;
     use core::num::traits::Zero;
+    use core::poseidon::poseidon_hash_span;
     use ekubo::components::shared_locker::{
         call_core_with_callback, consume_callback_data, handle_delta,
     };
+    use ekubo::components::util::serialize;
     use ekubo::interfaces::core::{
         ICoreDispatcher, ICoreDispatcherTrait, IExtension, ILocker, SwapParameters,
         UpdatePositionParameters,
@@ -36,15 +33,25 @@ pub mod LiquidityProvider {
     use ekubo::types::i129::i129;
     use ekubo::types::keys::PoolKey;
     use openzeppelin_access::ownable::OwnableComponent;
-    use openzeppelin_token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
+    use openzeppelin_token::erc20::interface::{
+        IERC20Dispatcher, IERC20DispatcherTrait, IERC20MetadataDispatcher,
+        IERC20MetadataDispatcherTrait,
+    };
+    use openzeppelin_utils::interfaces::{
+        IUniversalDeployerDispatcher, IUniversalDeployerDispatcherTrait,
+    };
     use starknet::storage::{
         Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerReadAccess,
         StoragePointerWriteAccess,
     };
-    use starknet::{ContractAddress, get_caller_address, get_contract_address};
+    use starknet::{ClassHash, ContractAddress, get_caller_address, get_contract_address};
     use crate::profile::{ILiquidityProfileDispatcher, ILiquidityProfileDispatcherTrait};
     use crate::token::{ILiquidityProviderTokenDispatcher, ILiquidityProviderTokenDispatcherTrait};
     use super::ILiquidityProvider;
+
+    const UDC_ADDRESS: felt252 = 0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf;
+    const POOL_TOKEN_CLASS_HASH: felt252 =
+        0x0000000000000000000000000000000000000000000000000000000000000000; // TODO: add class hash for pool token
 
     component!(path: OwnableComponent, storage: ownable, event: OwnableEvent);
 
@@ -72,9 +79,12 @@ pub mod LiquidityProvider {
 
     #[constructor]
     fn constructor(
-        ref self: ContractState, core: ICoreDispatcher, profile: ILiquidityProfileDispatcher,
+        ref self: ContractState,
+        core: ICoreDispatcher,
+        profile: ILiquidityProfileDispatcher,
+        owner: ContractAddress,
     ) {
-        self.ownable.initializer(get_caller_address());
+        self.ownable.initializer(owner);
 
         /// TODO: must have initializer internal function to calculate and add initial liquidity
         // TODO: deploy new erc20 for each pool key initialized with ERC20 external that only
@@ -100,6 +110,29 @@ pub mod LiquidityProvider {
 
     #[abi(embed_v0)]
     pub impl LiquidityProviderImpl of ILiquidityProvider<ContractState> {
+        fn create_and_initialize_pool(
+            ref self: ContractState,
+            pool_key: PoolKey,
+            initial_tick: i129,
+            profile_params: Span<i129>,
+        ) {
+            self.ownable.assert_only_owner();
+            assert(pool_key.extension == get_contract_address(), 'Extension not this contract');
+
+            // set liquidity profile parameters
+            let profile = self.profile.read();
+            profile.set_liquidity_profile(pool_key, profile_params);
+
+            // deploy pool token erc20
+            let pool_token = self.deploy_pool_token(pool_key, profile);
+            self.pool_tokens.write(pool_key, pool_token);
+
+            // initialize pool on ekubo core
+            let core = self.core.read();
+            core.initialize_pool(pool_key, initial_tick);
+            // TODO: add initial liquidity using liquidity scalar
+        }
+
         fn add_liquidity(ref self: ContractState, pool_key: PoolKey, amount: u128) {
             assert(pool_key.extension == get_contract_address(), 'Extension not this contract');
 
@@ -154,6 +187,43 @@ pub mod LiquidityProvider {
 
     #[generate_trait]
     impl InternalMethods of InternalMethodsTrait {
+        fn get_pool_token_description(
+            ref self: ContractState, pool_key: PoolKey, profile: ILiquidityProfileDispatcher,
+        ) -> (ByteArray, ByteArray) {
+            let (profile_name, profile_symbol) = profile.description();
+
+            let token0_symbol = IERC20MetadataDispatcher { contract_address: pool_key.token0 }
+                .symbol();
+            let token1_symbol = IERC20MetadataDispatcher { contract_address: pool_key.token1 }
+                .symbol();
+
+            let name = format!(
+                "Spline v0 {}/{} {} LP Token", token0_symbol, token1_symbol, profile_name,
+            );
+            let symbol = format!("SPLV0-{}/{}-{}-LP", token0_symbol, token1_symbol, profile_symbol);
+            return (name, symbol);
+        }
+        fn deploy_pool_token(
+            ref self: ContractState, pool_key: PoolKey, profile: ILiquidityProfileDispatcher,
+        ) -> ContractAddress {
+            let dispatcher = IUniversalDeployerDispatcher {
+                contract_address: UDC_ADDRESS.try_into().unwrap(),
+            };
+
+            let class_hash: ClassHash = POOL_TOKEN_CLASS_HASH.try_into().unwrap();
+            let (name, symbol) = self.get_pool_token_description(pool_key, profile);
+            let calldata = serialize::<(ByteArray, ByteArray)>(@(name, symbol)).span();
+            let salt: felt252 = poseidon_hash_span(calldata);
+
+            let pool_token = dispatcher.deploy_contract(class_hash, salt, true, calldata);
+            self.pool_tokens.write(pool_key, pool_token);
+
+            let owner = get_caller_address();
+            ILiquidityProviderTokenDispatcher { contract_address: pool_token }.initialize(owner);
+
+            return pool_token;
+        }
+
         fn update_positions(
             self: @ContractState,
             pool_key: PoolKey,
