@@ -36,9 +36,9 @@ pub mod TestProfile {
         fn get_liquidity_profile(ref self: ContractState, pool_key: PoolKey) -> Span<i129> {
             let (lf, step, n) = self.params.read(pool_key);
             array![
-                i129 { mag: lf, sign: false },
-                i129 { mag: step, sign: false },
-                i129 { mag: n, sign: false },
+                i129 { mag: lf, sign: true },
+                i129 { mag: step, sign: true },
+                i129 { mag: n, sign: true },
             ]
                 .span()
         }
