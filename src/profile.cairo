@@ -18,6 +18,11 @@ pub trait ILiquidityProfile<TStorage> {
         params: Span<ekubo::types::i129::i129>,
     );
 
+    // Returns the liquidity profile parameters for a given pool key
+    fn get_liquidity_profile(
+        ref self: TStorage, pool_key: ekubo::types::keys::PoolKey,
+    ) -> Span<ekubo::types::i129::i129>;
+
     // Returns the liquidity updates to add/remove liquidity
     fn get_liquidity_updates(
         ref self: TStorage,

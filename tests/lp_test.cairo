@@ -6,10 +6,7 @@ use ekubo::interfaces::core::{
 use ekubo::interfaces::router::{IRouterDispatcher, IRouterDispatcherTrait};
 use ekubo::types::call_points::CallPoints;
 use ekubo::types::keys::PoolKey;
-use openzeppelin_token::erc20::interface::{
-    IERC20Dispatcher, IERC20DispatcherTrait, IERC20MetadataDispatcher,
-    IERC20MetadataDispatcherTrait,
-};
+use openzeppelin_token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
 use snforge_std::{ContractClass, ContractClassTrait, DeclareResultTrait, declare};
 use spline_v0::lp::{ILiquidityProviderDispatcher, ILiquidityProviderDispatcherTrait};
 use spline_v0::profile::{ILiquidityProfileDispatcher, ILiquidityProfileDispatcherTrait};
@@ -46,20 +43,17 @@ fn router() -> IRouterDispatcher {
     }
 }
 
-fn mock_profile() -> ILiquidityProfileDispatcher {
-    ILiquidityProfileDispatcher {
-        contract_address: contract_address_const::<
-            0x0000000000000000000000000000000000000000000000000000000000000000,
-        >(),
-    }
-}
-
-fn setup() -> (PoolKey, ILiquidityProviderDispatcher) {
+fn setup() -> (PoolKey, ILiquidityProfileDispatcher, ILiquidityProviderDispatcher) {
     let contract_class = declare("LiquidityProvider").unwrap().contract_class();
+
+    let profile: ILiquidityProfileDispatcher = ILiquidityProfileDispatcher {
+        contract_address: deploy_contract(
+            declare("TestProfile").unwrap().contract_class(), array![],
+        ),
+    };
 
     let core: ICoreDispatcher = ekubo_core();
     let owner: ContractAddress = get_contract_address();
-    let profile: ILiquidityProfileDispatcher = mock_profile();
     let pool_token_class_hash: ClassHash = *declare("LiquidityProviderToken")
         .unwrap()
         .contract_class()
@@ -95,13 +89,13 @@ fn setup() -> (PoolKey, ILiquidityProviderDispatcher) {
         extension: lp.contract_address,
     };
 
-    (pool_key, lp)
+    (pool_key, profile, lp)
 }
 
 #[test]
 #[fork("mainnet")]
 fn test_constructor_sets_callpoints() {
-    let (pool_key, _) = setup();
+    let (pool_key, _, _) = setup();
     assert_eq!(
         ekubo_core().get_call_points(pool_key.extension),
         CallPoints {
