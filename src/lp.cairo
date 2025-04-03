@@ -42,13 +42,15 @@ pub mod LiquidityProvider {
     use openzeppelin_utils::interfaces::{
         IUniversalDeployerDispatcher, IUniversalDeployerDispatcherTrait,
     };
+    use spline_v0::profile::{ILiquidityProfileDispatcher, ILiquidityProfileDispatcherTrait};
+    use spline_v0::token::{
+        ILiquidityProviderTokenDispatcher, ILiquidityProviderTokenDispatcherTrait,
+    };
     use starknet::storage::{
         Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerReadAccess,
         StoragePointerWriteAccess,
     };
     use starknet::{ClassHash, ContractAddress, get_caller_address, get_contract_address};
-    use crate::profile::{ILiquidityProfileDispatcher, ILiquidityProfileDispatcherTrait};
-    use crate::token::{ILiquidityProviderTokenDispatcher, ILiquidityProviderTokenDispatcherTrait};
     use super::ILiquidityProvider;
 
     const UDC_ADDRESS: felt252 = 0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf;
@@ -60,7 +62,7 @@ pub mod LiquidityProvider {
     impl OwnableInternalImpl = OwnableComponent::InternalImpl<ContractState>;
 
     #[storage]
-    pub struct Storage {
+    struct Storage {
         core: ICoreDispatcher,
         profile: ILiquidityProfileDispatcher,
         pool_reserves: Map<PoolKey, (u128, u128)>,
@@ -345,8 +347,6 @@ pub mod LiquidityProvider {
                 .mint(caller, initial_liquidity_factor.try_into().unwrap());
         }
 
-        // TODO: use before and after swap to cache prior tick and final tick, then collect fees
-        // TODO: for all liquidity in between
         fn before_swap(
             ref self: ContractState,
             caller: ContractAddress,

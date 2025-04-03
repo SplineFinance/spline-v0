@@ -1,5 +1,8 @@
 #[starknet::interface]
 pub trait ILiquidityProviderToken<TStorage> {
+    // returns the mint/burn authority of the lp token
+    fn owner(ref self: TStorage) -> starknet::ContractAddress;
+
     // initializes lp token with owner
     fn initialize(ref self: TStorage, owner: starknet::ContractAddress);
 
@@ -45,6 +48,10 @@ pub mod LiquidityProviderToken {
 
     #[abi(embed_v0)]
     pub impl LiquidityProviderTokenImpl of ILiquidityProviderToken<ContractState> {
+        fn owner(ref self: ContractState) -> ContractAddress {
+            self.owner.read()
+        }
+
         fn initialize(ref self: ContractState, owner: ContractAddress) {
             assert(
                 self.owner.read() == Zero::<starknet::ContractAddress>::zero(),
