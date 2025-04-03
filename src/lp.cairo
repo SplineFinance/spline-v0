@@ -13,6 +13,11 @@ pub trait ILiquidityProvider<TStorage> {
 /// TODO: liquidity profiles are the components used in this contract
 /// TODO: fix for collect fees and compound into liquidity, likely on after swap (?) which should
 /// TODO: also increase liquidity factor
+///
+/// TODO: for fees, should afterSwap always collect swap fees from the positions swapped through and
+/// escrow in this contract TODO: then have harvest function that attempts to auto compund
+/// calculating liquidity factor delta from fees using reserve TODO: balances in contract storage.
+/// reserve balances should be updated also on afterSwap and afterUpdatePosition
 
 #[starknet::contract]
 pub mod LiquidityProvider {
@@ -26,6 +31,7 @@ pub mod LiquidityProvider {
     use ekubo::types::delta::Delta;
     use ekubo::types::i129::i129;
     use ekubo::types::keys::PoolKey;
+    use openzeppelin_access::ownable::OwnableComponent;
     use openzeppelin_token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::storage::{
         Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerReadAccess,
@@ -36,6 +42,13 @@ pub mod LiquidityProvider {
     use crate::token::{ILiquidityProviderTokenDispatcher, ILiquidityProviderTokenDispatcherTrait};
     use super::ILiquidityProvider;
 
+    component!(path: OwnableComponent, storage: ownable, event: OwnableEvent);
+
+    // Ownable Mixin
+    #[abi(embed_v0)]
+    impl OwnableImpl = OwnableComponent::OwnableMixinImpl<ContractState>;
+    impl OwnableInternalImpl = OwnableComponent::InternalImpl<ContractState>;
+
     #[storage]
     pub struct Storage {
         core: ICoreDispatcher,
@@ -43,12 +56,23 @@ pub mod LiquidityProvider {
         pool_reserves: Map<PoolKey, (u128, u128)>,
         pool_liquidity_factors: Map<PoolKey, u128>,
         pool_tokens: Map<PoolKey, ContractAddress>,
+        #[substorage(v0)]
+        ownable: OwnableComponent::Storage,
+    }
+
+    #[event]
+    #[derive(Drop, starknet::Event)]
+    enum Event {
+        #[flat]
+        OwnableEvent: OwnableComponent::Event,
     }
 
     #[constructor]
     fn constructor(
         ref self: ContractState, core: ICoreDispatcher, profile: ILiquidityProfileDispatcher,
     ) {
+        self.ownable.initializer(get_caller_address());
+
         /// TODO: must have initializer internal function to calculate and add initial liquidity
         // TODO: deploy new erc20 for each pool key initialized with ERC20 external that only
         // LiquidityProvider can call
@@ -59,12 +83,12 @@ pub mod LiquidityProvider {
         core
             .set_call_points(
                 CallPoints {
-                    before_initialize_pool: false,
+                    before_initialize_pool: true,
                     after_initialize_pool: false,
                     before_swap: false,
                     after_swap: true,
-                    before_update_position: true,
-                    after_update_position: false,
+                    before_update_position: false,
+                    after_update_position: true,
                     before_collect_fees: false,
                     after_collect_fees: false,
                 },

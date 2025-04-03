@@ -70,6 +70,7 @@ name = "spline_v0"
 version = "0.1.0"
 dependencies = [
  "ekubo",
+ "openzeppelin_access",
  "openzeppelin_token",
  "snforge_std",
 ]
