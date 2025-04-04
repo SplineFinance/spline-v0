@@ -41,10 +41,7 @@ pub mod LiquidityProvider {
     use ekubo::types::i129::i129;
     use ekubo::types::keys::PoolKey;
     use openzeppelin_access::ownable::OwnableComponent;
-    use openzeppelin_token::erc20::interface::{
-        IERC20Dispatcher, IERC20DispatcherTrait, IERC20MetadataDispatcher,
-        IERC20MetadataDispatcherTrait,
-    };
+    use openzeppelin_token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
     use openzeppelin_utils::interfaces::{
         IUniversalDeployerDispatcher, IUniversalDeployerDispatcherTrait,
     };
@@ -60,7 +57,7 @@ pub mod LiquidityProvider {
     use starknet::{ClassHash, ContractAddress, get_caller_address, get_contract_address};
     use super::ILiquidityProvider;
 
-    const UDC_ADDRESS: felt252 = 0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf;
+    const UDC_ADDRESS: felt252 = 0x04a64cd09a853868621d94cae9952b106f2c36a3f81260f85de6696c6b050221;
 
     component!(path: OwnableComponent, storage: ownable, event: OwnableEvent);
 
@@ -227,16 +224,8 @@ pub mod LiquidityProvider {
             ref self: ContractState, pool_key: PoolKey, profile: ILiquidityProfileDispatcher,
         ) -> (ByteArray, ByteArray) {
             let (profile_name, profile_symbol) = profile.description();
-
-            let token0_symbol = IERC20MetadataDispatcher { contract_address: pool_key.token0 }
-                .symbol();
-            let token1_symbol = IERC20MetadataDispatcher { contract_address: pool_key.token1 }
-                .symbol();
-
-            let name = format!(
-                "Spline v0 {}/{} {} LP Token", token0_symbol, token1_symbol, profile_name,
-            );
-            let symbol = format!("SPLV0-{}/{}-{}-LP", token0_symbol, token1_symbol, profile_symbol);
+            let name = format!("Spline v0 {} LP Token", profile_name);
+            let symbol = format!("SPLV0-{}-LP", profile_symbol);
             return (name, symbol);
         }
 
@@ -252,7 +241,7 @@ pub mod LiquidityProvider {
             let calldata = serialize::<(ByteArray, ByteArray)>(@(name, symbol)).span();
             let salt: felt252 = poseidon_hash_span(calldata);
 
-            let pool_token = dispatcher.deploy_contract(class_hash, salt, true, calldata);
+            let pool_token = dispatcher.deploy_contract(class_hash, salt, false, calldata);
             self.pool_tokens.write(pool_key, pool_token);
 
             let authority = get_caller_address();

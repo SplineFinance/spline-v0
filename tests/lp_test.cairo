@@ -146,4 +146,5 @@ fn test_create_and_initialize_pool_sets_liquidity_profile() {
     let (pool_key, lp, _, profile, default_profile_params) = setup();
     let initial_tick = i129 { mag: 0, sign: true };
     lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
+    assert_eq!(profile.get_liquidity_profile(pool_key), default_profile_params);
 }
