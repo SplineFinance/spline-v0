@@ -28,7 +28,7 @@ pub mod LiquidityProvider {
     use core::num::traits::Zero;
     use core::poseidon::poseidon_hash_span;
     use ekubo::components::shared_locker::{
-        call_core_with_callback, consume_callback_data, handle_delta,
+        call_core_with_callback, check_caller_is_core, consume_callback_data,
     };
     use ekubo::components::util::serialize;
     use ekubo::interfaces::core::{
@@ -49,6 +49,7 @@ pub mod LiquidityProvider {
         IUniversalDeployerDispatcher, IUniversalDeployerDispatcherTrait,
     };
     use spline_v0::profile::{ILiquidityProfileDispatcher, ILiquidityProfileDispatcherTrait};
+    use spline_v0::shared::close_delta;
     use spline_v0::token::{
         ILiquidityProviderTokenDispatcher, ILiquidityProviderTokenDispatcherTrait,
     };
@@ -99,8 +100,15 @@ pub mod LiquidityProvider {
         self.core.write(core);
         self.pool_token_class_hash.write(pool_token_class_hash);
 
-        // TODO: separate fee harvester escrow or save as snapshot on ekubo so dont have issues with
-        // handle_delta TODO: where transfer in assumes no balance in this contract
+        // TODO: separate fee harvester escrow so dont have issues with handle_delta?
+        // TODO: where transfer in assumes no balance in this contract
+        // TODO: actually harvest fees might be easy. track fees in storage then lump
+        // TODO: in to liquidity_delta value on update_position taking care with
+        // TODO: shares amount minted/burned and liquidity factor update before mint/burn
+        // TODO: liquidity delta calc from fees should use fees and reserves in x,y as frac
+        // TODO: in sense that liquidity_factor_delta = (fees / reserves) * liquidity_factor
+        // TODO: then add that in to store new liquidity_factor *before* mint/burn shares calc
+
         core
             .set_call_points(
                 CallPoints {
@@ -324,8 +332,8 @@ pub mod LiquidityProvider {
             let balance_delta = self.update_positions(pool_key, liquidity_factor_delta);
 
             // settle up balance deltas with core
-            handle_delta(core, pool_key.token0, balance_delta.amount0, caller);
-            handle_delta(core, pool_key.token1, balance_delta.amount1, caller);
+            close_delta(core, pool_key.token0, balance_delta.amount0, caller);
+            close_delta(core, pool_key.token1, balance_delta.amount1, caller);
 
             array![].span()
         }
@@ -343,10 +351,12 @@ pub mod LiquidityProvider {
         fn after_initialize_pool(
             ref self: ContractState, caller: ContractAddress, pool_key: PoolKey, initial_tick: i129,
         ) {
+            let core = self.core.read();
+            check_caller_is_core(core);
+
             let profile = self.profile.read();
             let initial_liquidity_factor = profile.initial_liquidity_factor(pool_key, initial_tick);
 
-            let core = self.core.read();
             let liquidity_factor_delta = i129 { mag: initial_liquidity_factor, sign: true };
             call_core_with_callback::<
                 (PoolKey, i129, ContractAddress), (),
@@ -378,6 +388,9 @@ pub mod LiquidityProvider {
             params: SwapParameters,
             delta: Delta,
         ) {
+            let core = self.core.read();
+            check_caller_is_core(core);
+
             self.update_reserves(pool_key, delta);
         }
 
@@ -397,6 +410,9 @@ pub mod LiquidityProvider {
             params: UpdatePositionParameters,
             delta: Delta,
         ) {
+            let core = self.core.read();
+            check_caller_is_core(core);
+
             self.update_reserves(pool_key, delta);
         }
 

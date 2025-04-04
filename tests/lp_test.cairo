@@ -5,7 +5,9 @@ use ekubo::interfaces::core::{
 };
 use ekubo::interfaces::router::{IRouterDispatcher, IRouterDispatcherTrait};
 use ekubo::types::call_points::CallPoints;
+use ekubo::types::i129::i129;
 use ekubo::types::keys::PoolKey;
+use openzeppelin_access::ownable::interface::{IOwnableDispatcher, IOwnableDispatcherTrait};
 use openzeppelin_token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
 use snforge_std::{ContractClass, ContractClassTrait, DeclareResultTrait, declare};
 use spline_v0::lp::{ILiquidityProviderDispatcher, ILiquidityProviderDispatcherTrait};
@@ -43,7 +45,18 @@ fn router() -> IRouterDispatcher {
     }
 }
 
-fn setup() -> (PoolKey, ILiquidityProfileDispatcher, ILiquidityProviderDispatcher) {
+fn profile_params(liquidity_factor: u128, step: u128, n: u128) -> Span<i129> {
+    array![
+        i129 { mag: liquidity_factor, sign: true },
+        i129 { mag: step, sign: true },
+        i129 { mag: n, sign: true },
+    ]
+        .span()
+}
+
+fn setup() -> (
+    PoolKey, ILiquidityProviderDispatcher, ContractAddress, ILiquidityProfileDispatcher, Span<i129>,
+) {
     let contract_class = declare("LiquidityProvider").unwrap().contract_class();
 
     let profile: ILiquidityProfileDispatcher = ILiquidityProfileDispatcher {
@@ -51,6 +64,7 @@ fn setup() -> (PoolKey, ILiquidityProfileDispatcher, ILiquidityProviderDispatche
             declare("TestProfile").unwrap().contract_class(), array![],
         ),
     };
+    let default_profile_params = profile_params(1000000000000000000, 2000, 20);
 
     let core: ICoreDispatcher = ekubo_core();
     let owner: ContractAddress = get_contract_address();
@@ -89,13 +103,13 @@ fn setup() -> (PoolKey, ILiquidityProfileDispatcher, ILiquidityProviderDispatche
         extension: lp.contract_address,
     };
 
-    (pool_key, profile, lp)
+    (pool_key, lp, owner, profile, default_profile_params)
 }
 
 #[test]
 #[fork("mainnet")]
 fn test_constructor_sets_callpoints() {
-    let (pool_key, _, _) = setup();
+    let (pool_key, _, _, _, _) = setup();
     assert_eq!(
         ekubo_core().get_call_points(pool_key.extension),
         CallPoints {
@@ -111,3 +125,25 @@ fn test_constructor_sets_callpoints() {
     );
 }
 
+#[test]
+#[fork("mainnet")]
+fn test_constructor_sets_storage() {
+    let (_, lp, owner, profile, _) = setup();
+    let lp_profile: ContractAddress = lp.profile().contract_address;
+    let lp_core: ContractAddress = lp.core().contract_address;
+    let lp_ownable: IOwnableDispatcher = IOwnableDispatcher {
+        contract_address: lp.contract_address,
+    };
+    let lp_owner: ContractAddress = lp_ownable.owner();
+    assert_eq!(lp_profile, profile.contract_address);
+    assert_eq!(lp_core, ekubo_core().contract_address);
+    assert_eq!(lp_owner, owner);
+}
+
+#[test]
+#[fork("mainnet")]
+fn test_create_and_initialize_pool_sets_liquidity_profile() {
+    let (pool_key, lp, _, profile, default_profile_params) = setup();
+    let initial_tick = i129 { mag: 0, sign: true };
+    lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
+}
