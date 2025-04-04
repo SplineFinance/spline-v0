@@ -251,7 +251,7 @@ pub mod LiquidityProvider {
             let salt: felt252 = poseidon_hash_span(calldata);
 
             let pool_token = dispatcher.deploy_contract(class_hash, salt, false, calldata);
-            let authority = get_caller_address();
+            let authority = get_contract_address();
             ILiquidityProviderTokenDispatcher { contract_address: pool_token }
                 .initialize(authority);
 
