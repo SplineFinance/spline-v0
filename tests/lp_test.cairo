@@ -12,13 +12,15 @@ use ekubo::types::keys::{PoolKey, PositionKey};
 use ekubo::types::pool_price::PoolPrice;
 use openzeppelin_access::ownable::interface::{IOwnableDispatcher, IOwnableDispatcherTrait};
 use openzeppelin_token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
-use snforge_std::{ContractClass, ContractClassTrait, DeclareResultTrait, declare};
+use snforge_std::{
+    ContractClass, ContractClassTrait, DeclareResultTrait, declare, start_cheat_caller_address,
+    stop_cheat_caller_address,
+};
 use spline_v0::lp::{ILiquidityProviderDispatcher, ILiquidityProviderDispatcherTrait};
 use spline_v0::profile::{ILiquidityProfileDispatcher, ILiquidityProfileDispatcherTrait};
 use spline_v0::sweep::{ISweepableDispatcher, ISweepableDispatcherTrait};
 use spline_v0::token::{ILiquidityProviderTokenDispatcher, ILiquidityProviderTokenDispatcherTrait};
 use starknet::{ClassHash, ContractAddress, contract_address_const, get_contract_address};
-
 fn deploy_contract(class: @ContractClass, calldata: Array<felt252>) -> ContractAddress {
     let (contract_address, _) = class.deploy(@calldata).expect('Deploy contract failed');
     contract_address
@@ -390,4 +392,50 @@ fn test_create_and_initialize_pool_sets_initial_liquidity_factor() {
     assert_eq!(lp.pool_liquidity_factor(pool_key), 0);
     lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
     assert_eq!(lp.pool_liquidity_factor(pool_key), initial_liquidity_factor.mag);
+}
+
+#[test]
+#[fork("mainnet")]
+#[should_panic(expected: ('Caller is not the owner',))]
+fn test_create_and_initialize_pool_fails_if_not_owner() {
+    let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
+    let initial_tick = i129 { mag: 0, sign: false };
+    start_cheat_caller_address(lp.contract_address, Zero::<ContractAddress>::zero());
+    lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
+    stop_cheat_caller_address(lp.contract_address);
+}
+
+
+#[test]
+#[fork("mainnet")]
+#[should_panic(expected: ('Pool token already deployed',))]
+fn test_create_and_initialize_pool_fails_if_already_initialized() {
+    let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
+
+    let initial_tick = i129 { mag: 0, sign: false };
+    let step = *default_profile_params[2];
+    let n = *default_profile_params[3];
+    let amount: u128 = (step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+    lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
+
+    // should fail on second time
+    lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
+}
+
+#[test]
+#[fork("mainnet")]
+#[should_panic(expected: ('Extension not this contract',))]
+fn test_create_and_initialize_pool_fails_if_extension_not_liquidity_provider() {
+    let (_, lp, _, _, default_profile_params, token0, token1) = setup();
+    let initial_tick = i129 { mag: 0, sign: false };
+    let new_pool_key = PoolKey {
+        token0: token0.contract_address,
+        token1: token1.contract_address,
+        fee: 34028236692093846346337460743176821, // 1 bps (= 2**128 / 10000)
+        tick_spacing: 1, // 0.01 bps
+        extension: Zero::<ContractAddress>::zero(),
+    };
+    lp.create_and_initialize_pool(new_pool_key, initial_tick, default_profile_params);
 }

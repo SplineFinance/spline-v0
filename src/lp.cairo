@@ -147,6 +147,7 @@ pub mod LiquidityProvider {
         ) {
             self.ownable.assert_only_owner();
             self.check_pool_key(pool_key);
+            self.check_pool_not_initialized(pool_key);
 
             // set liquidity profile parameters
             let profile = self.profile.read();
@@ -262,6 +263,13 @@ pub mod LiquidityProvider {
             assert(
                 self.pool_tokens.read(pool_key) != Zero::<ContractAddress>::zero(),
                 'Pool token not deployed',
+            );
+        }
+
+        fn check_pool_not_initialized(ref self: ContractState, pool_key: PoolKey) {
+            assert(
+                self.pool_tokens.read(pool_key) == Zero::<ContractAddress>::zero(),
+                'Pool token already deployed',
             );
         }
 
