@@ -15,6 +15,7 @@ use openzeppelin_token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTra
 use snforge_std::{ContractClass, ContractClassTrait, DeclareResultTrait, declare};
 use spline_v0::lp::{ILiquidityProviderDispatcher, ILiquidityProviderDispatcherTrait};
 use spline_v0::profile::{ILiquidityProfileDispatcher, ILiquidityProfileDispatcherTrait};
+use spline_v0::sweep::{ISweepableDispatcher, ISweepableDispatcherTrait};
 use spline_v0::token::{ILiquidityProviderTokenDispatcher, ILiquidityProviderTokenDispatcherTrait};
 use starknet::{ClassHash, ContractAddress, contract_address_const, get_contract_address};
 
@@ -335,6 +336,14 @@ fn test_create_and_initialize_pool_transfers_funds_to_pool() {
     );
     assert_eq!(ekubo_balance0_after, ekubo_balance0 + amount.into() - balance0);
     assert_eq!(ekubo_balance1_after, ekubo_balance1 + amount.into() - balance1);
+
+    // sweep and check that no dust left
+    ISweepableDispatcher { contract_address: lp.contract_address }
+        .sweep(token0.contract_address, get_contract_address());
+    ISweepableDispatcher { contract_address: lp.contract_address }
+        .sweep(token1.contract_address, get_contract_address());
+    assert_eq!(token0.balance_of(lp.contract_address), 0);
+    assert_eq!(token1.balance_of(lp.contract_address), 0);
 }
 
 #[test]

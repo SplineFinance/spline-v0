@@ -51,6 +51,7 @@ pub mod LiquidityProvider {
         IUniversalDeployerDispatcher, IUniversalDeployerDispatcherTrait,
     };
     use spline_v0::profile::{ILiquidityProfileDispatcher, ILiquidityProfileDispatcherTrait};
+    use spline_v0::sweep::SweepableComponent;
     use spline_v0::token::{
         ILiquidityProviderTokenDispatcher, ILiquidityProviderTokenDispatcherTrait,
     };
@@ -64,10 +65,14 @@ pub mod LiquidityProvider {
     const UDC_ADDRESS: felt252 = 0x04a64cd09a853868621d94cae9952b106f2c36a3f81260f85de6696c6b050221;
 
     component!(path: OwnableComponent, storage: ownable, event: OwnableEvent);
+    component!(path: SweepableComponent, storage: sweepable, event: SweepableEvent);
 
     #[abi(embed_v0)]
     impl OwnableImpl = OwnableComponent::OwnableMixinImpl<ContractState>;
     impl OwnableInternalImpl = OwnableComponent::InternalImpl<ContractState>;
+
+    #[abi(embed_v0)]
+    impl SweepableImpl = SweepableComponent::Sweepable<ContractState>;
 
     #[storage]
     struct Storage {
@@ -79,6 +84,8 @@ pub mod LiquidityProvider {
         pool_token_class_hash: ClassHash,
         #[substorage(v0)]
         ownable: OwnableComponent::Storage,
+        #[substorage(v0)]
+        sweepable: SweepableComponent::Storage,
     }
 
     #[event]
@@ -86,6 +93,8 @@ pub mod LiquidityProvider {
     enum Event {
         #[flat]
         OwnableEvent: OwnableComponent::Event,
+        #[flat]
+        SweepableEvent: SweepableComponent::Event,
     }
 
     #[constructor]
