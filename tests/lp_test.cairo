@@ -22,10 +22,18 @@ fn deploy_contract(class: @ContractClass, calldata: Array<felt252>) -> ContractA
 }
 
 fn deploy_token(
-    class: @ContractClass, recipient: ContractAddress, amount: u256,
+    class: @ContractClass,
+    name: ByteArray,
+    symbol: ByteArray,
+    recipient: ContractAddress,
+    amount: u256,
 ) -> IERC20Dispatcher {
     let (contract_address, _) = class
-        .deploy(@array![recipient.into(), amount.low.into(), amount.high.into()])
+        .deploy(
+            @serialize::<
+                (ByteArray, ByteArray, ContractAddress, u256),
+            >(@(name, symbol, recipient, amount)),
+        )
         .expect('Deploy token failed');
 
     IERC20Dispatcher { contract_address }
@@ -84,8 +92,8 @@ fn setup() -> (
 
     let token_class = declare("TestToken").unwrap().contract_class();
     let (tokenA, tokenB) = (
-        deploy_token(token_class, owner, 0xffffffffffffffffffffffffffffffff),
-        deploy_token(token_class, owner, 0xffffffffffffffffffffffffffffffff),
+        deploy_token(token_class, "Token A", "A", owner, 0xffffffffffffffffffffffffffffffff),
+        deploy_token(token_class, "Token B", "B", owner, 0xffffffffffffffffffffffffffffffff),
     );
 
     tokenA.approve(lp.contract_address, 0xffffffffffffffffffffffffffffffff);
@@ -172,7 +180,30 @@ fn test_create_and_initialize_pool_initializes_pool() {}
 
 #[test]
 #[fork("mainnet")]
-fn test_create_and_initialize_pool_adds_initial_liquidity_to_pool() {}
+fn test_create_and_initialize_pool_adds_initial_liquidity_to_pool() {
+    let (pool_key, lp, _, _, default_profile_params) = setup();
+    let initial_tick = i129 { mag: 0, sign: true };
+    let token0: IERC20Dispatcher = IERC20Dispatcher { contract_address: pool_key.token0 };
+    let token1: IERC20Dispatcher = IERC20Dispatcher { contract_address: pool_key.token1 };
+
+    assert!(token0.balance_of(lp.contract_address) == 0, "Token0 lp bal0 != 0");
+    assert!(token1.balance_of(lp.contract_address) == 0, "Token1 lp bal1 != 0");
+
+    let balance0_this_before = token0.balance_of(get_contract_address());
+    let balance1_this_before = token1.balance_of(get_contract_address());
+
+    lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
+
+    let balance0_this_after = token0.balance_of(get_contract_address());
+    let balance1_this_after = token1.balance_of(get_contract_address());
+
+    assert!(
+        balance0_this_after <= balance0_this_before, "Token0 balance of this contract increased",
+    );
+    assert!(
+        balance1_this_after <= balance1_this_before, "Token1 balance of this contract increased",
+    );
+}
 
 #[test]
 #[fork("mainnet")]

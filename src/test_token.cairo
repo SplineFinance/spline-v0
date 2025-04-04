@@ -1,79 +1,37 @@
-use starknet::ContractAddress;
-
-#[starknet::interface]
-pub trait IERC20<TContractState> {
-    fn balanceOf(self: @TContractState, account: ContractAddress) -> u256;
-    fn allowance(self: @TContractState, owner: ContractAddress, spender: ContractAddress) -> u256;
-    fn transfer(ref self: TContractState, recipient: ContractAddress, amount: u256) -> bool;
-    fn transferFrom(
-        ref self: TContractState, sender: ContractAddress, recipient: ContractAddress, amount: u256,
-    ) -> bool;
-    fn approve(ref self: TContractState, spender: ContractAddress, amount: u256) -> bool;
-}
-
 #[starknet::contract]
 pub mod TestToken {
-    use starknet::storage::{
-        Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePathEntry,
-        StoragePointerWriteAccess,
-    };
+    use openzeppelin_token::erc20::{ERC20Component, ERC20HooksEmptyImpl};
     use starknet::{ContractAddress, get_caller_address};
-    use super::IERC20;
+
+    component!(path: ERC20Component, storage: erc20, event: ERC20Event);
+
+    #[abi(embed_v0)]
+    impl ERC20MixinImpl = ERC20Component::ERC20MixinImpl<ContractState>;
+    impl ERC20InternalImpl = ERC20Component::InternalImpl<ContractState>;
 
     #[storage]
     struct Storage {
-        balances: Map<ContractAddress, u256>,
-        allowances: Map<ContractAddress, Map<ContractAddress, u256>>,
+        authority: ContractAddress,
+        #[substorage(v0)]
+        erc20: ERC20Component::Storage,
     }
 
-    #[derive(starknet::Event, Drop)]
     #[event]
-    enum Event {}
+    #[derive(Drop, starknet::Event)]
+    enum Event {
+        #[flat]
+        ERC20Event: ERC20Component::Event,
+    }
 
     #[constructor]
-    fn constructor(ref self: ContractState, recipient: ContractAddress, amount: u256) {
-        self.balances.entry(recipient).write(amount);
-    }
-
-    #[abi(embed_v0)]
-    impl IERC20Impl of IERC20<ContractState> {
-        fn balanceOf(self: @ContractState, account: ContractAddress) -> u256 {
-            self.balances.read(account)
-        }
-
-        fn allowance(
-            self: @ContractState, owner: ContractAddress, spender: ContractAddress,
-        ) -> u256 {
-            self.allowances.entry(owner).read(spender)
-        }
-
-        fn transfer(ref self: ContractState, recipient: ContractAddress, amount: u256) -> bool {
-            let balance = self.balances.read(get_caller_address());
-            assert(balance >= amount, 'INSUFFICIENT_TRANSFER_BALANCE');
-            self.balances.write(recipient, self.balances.read(recipient) + amount);
-            self.balances.write(get_caller_address(), balance - amount);
-            true
-        }
-
-        fn transferFrom(
-            ref self: ContractState,
-            sender: ContractAddress,
-            recipient: ContractAddress,
-            amount: u256,
-        ) -> bool {
-            let allowance = self.allowances.entry(sender).read(get_caller_address());
-            assert(allowance >= amount, 'INSUFFICIENT_ALLOWANCE');
-            let balance = self.balances.read(sender);
-            assert(balance >= amount, 'INSUFFICIENT_TF_BALANCE');
-            self.balances.write(recipient, self.balances.read(recipient) + amount);
-            self.balances.write(sender, balance - amount);
-            self.allowances.entry(sender).write(get_caller_address(), allowance - amount);
-            true
-        }
-
-        fn approve(ref self: ContractState, spender: ContractAddress, amount: u256) -> bool {
-            self.allowances.entry(get_caller_address()).write(spender, amount.try_into().unwrap());
-            true
-        }
+    fn constructor(
+        ref self: ContractState,
+        name: ByteArray,
+        symbol: ByteArray,
+        recipient: ContractAddress,
+        supply: u256,
+    ) {
+        self.erc20.initializer(name, symbol);
+        self.erc20.mint(recipient, supply);
     }
 }

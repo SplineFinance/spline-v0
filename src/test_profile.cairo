@@ -52,8 +52,8 @@ pub mod TestProfile {
                 let update_params = UpdatePositionParameters {
                     salt: 0,
                     bounds: Bounds {
-                        lower: i129 { mag: i * step, sign: false },
-                        upper: i129 { mag: i * step, sign: true },
+                        lower: i129 { mag: (i + 1) * step, sign: false },
+                        upper: i129 { mag: (i + 1) * step, sign: true },
                     },
                     liquidity_delta: liquidity_factor / i129 { mag: (1 + i), sign: true },
                 };

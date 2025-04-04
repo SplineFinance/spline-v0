@@ -33,7 +33,7 @@ pub mod LiquidityProvider {
     use core::num::traits::Zero;
     use core::poseidon::poseidon_hash_span;
     use ekubo::components::shared_locker::{
-        call_core_with_callback, check_caller_is_core, consume_callback_data,
+        call_core_with_callback, check_caller_is_core, consume_callback_data, handle_delta,
     };
     use ekubo::components::util::serialize;
     use ekubo::interfaces::core::{
@@ -51,7 +51,6 @@ pub mod LiquidityProvider {
         IUniversalDeployerDispatcher, IUniversalDeployerDispatcherTrait,
     };
     use spline_v0::profile::{ILiquidityProfileDispatcher, ILiquidityProfileDispatcherTrait};
-    use spline_v0::shared::close_delta;
     use spline_v0::token::{
         ILiquidityProviderTokenDispatcher, ILiquidityProviderTokenDispatcherTrait,
     };
@@ -328,8 +327,8 @@ pub mod LiquidityProvider {
             let balance_delta = self.update_positions(pool_key, liquidity_factor_delta);
 
             // settle up balance deltas with core
-            close_delta(core, pool_key.token0, balance_delta.amount0, caller);
-            close_delta(core, pool_key.token1, balance_delta.amount1, caller);
+            handle_delta(core, pool_key.token0, balance_delta.amount0, caller);
+            handle_delta(core, pool_key.token1, balance_delta.amount1, caller);
 
             array![].span()
         }
