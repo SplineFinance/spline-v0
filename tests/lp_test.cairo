@@ -1,3 +1,4 @@
+use core::num::traits::Zero;
 use ekubo::components::util::serialize;
 use ekubo::interfaces::core::{
     ICoreDispatcher, ICoreDispatcherTrait, IExtension, ILocker, SwapParameters,
@@ -12,6 +13,7 @@ use openzeppelin_token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTra
 use snforge_std::{ContractClass, ContractClassTrait, DeclareResultTrait, declare};
 use spline_v0::lp::{ILiquidityProviderDispatcher, ILiquidityProviderDispatcherTrait};
 use spline_v0::profile::{ILiquidityProfileDispatcher, ILiquidityProfileDispatcherTrait};
+use spline_v0::token::{ILiquidityProviderTokenDispatcher, ILiquidityProviderTokenDispatcherTrait};
 use starknet::{ClassHash, ContractAddress, contract_address_const, get_contract_address};
 
 fn deploy_contract(class: @ContractClass, calldata: Array<felt252>) -> ContractAddress {
@@ -147,4 +149,19 @@ fn test_create_and_initialize_pool_sets_liquidity_profile() {
     let initial_tick = i129 { mag: 0, sign: true };
     lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
     assert_eq!(profile.get_liquidity_profile(pool_key), default_profile_params);
+}
+
+#[test]
+#[fork("mainnet")]
+fn test_create_and_initialize_pool_deploys_pool_token() {
+    let (pool_key, lp, _, _, default_profile_params) = setup();
+    let initial_tick = i129 { mag: 0, sign: true };
+    assert_eq!(lp.pool_token(pool_key), Zero::<ContractAddress>::zero());
+
+    lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
+    let pool_token = lp.pool_token(pool_key);
+    assert_ne!(pool_token, Zero::<ContractAddress>::zero());
+
+    let lp_token = ILiquidityProviderTokenDispatcher { contract_address: pool_token };
+    assert_eq!(lp_token.authority(), lp.contract_address);
 }

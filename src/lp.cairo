@@ -20,6 +20,11 @@ pub trait ILiquidityProvider<TStorage> {
 
     /// returns the profile for pools deployed by this liquidity provider
     fn profile(ref self: TStorage) -> spline_v0::profile::ILiquidityProfileDispatcher;
+
+    /// returns the liquidity provider token for pool with ekubo key `pool_key`
+    fn pool_token(
+        ref self: TStorage, pool_key: ekubo::types::keys::PoolKey,
+    ) -> starknet::ContractAddress;
 }
 
 #[starknet::contract]
@@ -205,6 +210,10 @@ pub mod LiquidityProvider {
         fn profile(ref self: ContractState) -> ILiquidityProfileDispatcher {
             self.profile.read()
         }
+
+        fn pool_token(ref self: ContractState, pool_key: PoolKey) -> ContractAddress {
+            self.pool_tokens.read(pool_key)
+        }
     }
 
     #[generate_trait]
@@ -242,8 +251,6 @@ pub mod LiquidityProvider {
             let salt: felt252 = poseidon_hash_span(calldata);
 
             let pool_token = dispatcher.deploy_contract(class_hash, salt, false, calldata);
-            self.pool_tokens.write(pool_key, pool_token);
-
             let authority = get_caller_address();
             ILiquidityProviderTokenDispatcher { contract_address: pool_token }
                 .initialize(authority);
