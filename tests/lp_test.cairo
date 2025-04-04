@@ -66,7 +66,7 @@ fn setup() -> (
             declare("TestProfile").unwrap().contract_class(), array![],
         ),
     };
-    let default_profile_params = profile_params(1000000000000000000, 2000, 20);
+    let default_profile_params = profile_params(1000000000000000000, 2000, 100);
 
     let core: ICoreDispatcher = ekubo_core();
     let owner: ContractAddress = get_contract_address();
@@ -165,3 +165,19 @@ fn test_create_and_initialize_pool_deploys_pool_token() {
     let lp_token = ILiquidityProviderTokenDispatcher { contract_address: pool_token };
     assert_eq!(lp_token.authority(), lp.contract_address);
 }
+
+#[test]
+#[fork("mainnet")]
+fn test_create_and_initialize_pool_initializes_pool() {}
+
+#[test]
+#[fork("mainnet")]
+fn test_create_and_initialize_pool_adds_initial_liquidity_to_pool() {}
+
+#[test]
+#[fork("mainnet")]
+fn test_create_and_initialize_pool_mints_initial_shares_to_liquidity_provider() {}
+
+#[test]
+#[fork("mainnet")]
+fn test_create_and_initialize_pool_sets_initial_liquidity_factor() {}
