@@ -163,10 +163,12 @@ fn test_constructor_sets_storage() {
 #[fork("mainnet")]
 fn test_create_and_initialize_pool_sets_liquidity_profile() {
     let (pool_key, lp, _, profile, default_profile_params, token0, token1) = setup();
+    let step = *default_profile_params[2];
+    let n = *default_profile_params[3];
     let initial_tick = i129 { mag: 0, sign: false };
     // roughly given initial tick = 0. there should be excess in the lp contract after
     // @dev quoter to fix this amount excess issue
-    let amount: u128 = *default_profile_params[0].mag;
+    let amount: u128 = (step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
     token0.transfer(lp.contract_address, amount.into());
     token1.transfer(lp.contract_address, amount.into());
 
@@ -178,10 +180,12 @@ fn test_create_and_initialize_pool_sets_liquidity_profile() {
 #[fork("mainnet")]
 fn test_create_and_initialize_pool_deploys_pool_token() {
     let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
+    let step = *default_profile_params[2];
+    let n = *default_profile_params[3];
     let initial_tick = i129 { mag: 0, sign: false };
     // roughly given initial tick = 0. there should be excess in the lp contract after
     // @dev quoter to fix this amount excess issue
-    let amount: u128 = *default_profile_params[0].mag;
+    let amount: u128 = (step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
     token0.transfer(lp.contract_address, amount.into());
     token1.transfer(lp.contract_address, amount.into());
 
@@ -198,10 +202,12 @@ fn test_create_and_initialize_pool_deploys_pool_token() {
 #[fork("mainnet")]
 fn test_create_and_initialize_pool_initializes_pool() {
     let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
+    let step = *default_profile_params[2];
+    let n = *default_profile_params[3];
     let initial_tick = i129 { mag: 100, sign: false };
     // roughly given initial tick = 0. there should be excess in the lp contract after
     // @dev quoter to fix this amount excess issue
-    let amount: u128 = *default_profile_params[0].mag;
+    let amount: u128 = (step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
     token0.transfer(lp.contract_address, amount.into());
     token1.transfer(lp.contract_address, amount.into());
 
@@ -276,16 +282,16 @@ fn test_create_and_initialize_pool_adds_initial_liquidity_to_pool() {
 
     // roughly given initial tick = 0. there should be excess in the lp contract after
     // @dev quoter to fix this amount excess issue
-    let amount: u128 = *default_profile_params[0].mag;
+    let amount: u128 = (step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
     token0.transfer(lp.contract_address, amount.into());
     token1.transfer(lp.contract_address, amount.into());
+
     lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
 
     // check no liquidity at expected profile ticks
     // TODO: why is profile.liquidity_updates returning an empty array after initialize_pool?
 
     // check liquidity at expected profile ticks according to test profile
-    let mut i = 0;
     for update in liquidity_updates {
         let position_key = PositionKey {
             salt: 0, owner: lp.contract_address, bounds: *update.bounds,
@@ -302,13 +308,33 @@ fn test_create_and_initialize_pool_adds_initial_liquidity_to_pool() {
 fn test_create_and_initialize_pool_transfers_funds_to_pool() {
     let (pool_key, lp, _, profile, default_profile_params, token0, token1) = setup();
     let core: ICoreDispatcher = ekubo_core();
+    let step = *default_profile_params[2];
+    let n = *default_profile_params[3];
     let initial_tick = i129 { mag: 0, sign: false };
     // roughly given initial tick = 0. there should be excess in the lp contract after
     // @dev quoter to fix this amount excess issue
-    let amount: u128 = *default_profile_params[0].mag;
+    let amount: u128 = (step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
     token0.transfer(lp.contract_address, amount.into());
     token1.transfer(lp.contract_address, amount.into());
+    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
+    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
+
+    let ekubo_balance0 = token0.balance_of(core.contract_address);
+    let ekubo_balance1 = token1.balance_of(core.contract_address);
+
     lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
+
+    let (balance0, balance1) = (
+        token0.balance_of(lp.contract_address), token1.balance_of(lp.contract_address),
+    );
+    assert_lt!(balance0, amount.into() / 10); // less than 10% left of dust
+    assert_lt!(balance1, amount.into() / 10); // less than 10% left of dust
+
+    let (ekubo_balance0_after, ekubo_balance1_after) = (
+        token0.balance_of(core.contract_address), token1.balance_of(core.contract_address),
+    );
+    assert_eq!(ekubo_balance0_after, ekubo_balance0 + amount.into() - balance0);
+    assert_eq!(ekubo_balance1_after, ekubo_balance1 + amount.into() - balance1);
 }
 
 #[test]

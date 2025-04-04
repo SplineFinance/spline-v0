@@ -398,6 +398,7 @@ pub mod LiquidityProvider {
             pool_key: PoolKey,
             params: UpdatePositionParameters,
         ) {
+            // TODO: check if this fires when update position
             assert(caller == get_contract_address(), 'Only lp can update position');
         }
 
