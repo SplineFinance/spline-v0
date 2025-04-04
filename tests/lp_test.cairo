@@ -5,9 +5,11 @@ use ekubo::interfaces::core::{
     UpdatePositionParameters,
 };
 use ekubo::interfaces::router::{IRouterDispatcher, IRouterDispatcherTrait};
+use ekubo::types::bounds::Bounds;
 use ekubo::types::call_points::CallPoints;
 use ekubo::types::i129::i129;
-use ekubo::types::keys::PoolKey;
+use ekubo::types::keys::{PoolKey, PositionKey};
+use ekubo::types::pool_price::PoolPrice;
 use openzeppelin_access::ownable::interface::{IOwnableDispatcher, IOwnableDispatcherTrait};
 use openzeppelin_token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
 use snforge_std::{ContractClass, ContractClassTrait, DeclareResultTrait, declare};
@@ -194,12 +196,111 @@ fn test_create_and_initialize_pool_deploys_pool_token() {
 
 #[test]
 #[fork("mainnet")]
-fn test_create_and_initialize_pool_initializes_pool() {}
+fn test_create_and_initialize_pool_initializes_pool() {
+    let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
+    let initial_tick = i129 { mag: 100, sign: false };
+    // roughly given initial tick = 0. there should be excess in the lp contract after
+    // @dev quoter to fix this amount excess issue
+    let amount: u128 = *default_profile_params[0].mag;
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+
+    let core = ekubo_core();
+    let price: PoolPrice = core.get_pool_price(pool_key);
+    assert_eq!(price.sqrt_ratio, 0);
+    assert_eq!(price.tick, Zero::<i129>::zero());
+
+    lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
+
+    let price: PoolPrice = core.get_pool_price(pool_key);
+    assert_ne!(price.sqrt_ratio, 0);
+    assert_eq!(price.tick, initial_tick);
+}
 
 #[test]
 #[fork("mainnet")]
 fn test_create_and_initialize_pool_adds_initial_liquidity_to_pool() {
-    let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
+    let (pool_key, lp, _, profile, default_profile_params, token0, token1) = setup();
+    let core: ICoreDispatcher = ekubo_core();
+    let initial_tick = i129 { mag: 0, sign: false };
+    assert_eq!(initial_tick, *default_profile_params[1]);
+
+    let liquidity_factor = *default_profile_params[0];
+    let step = *default_profile_params[2];
+    let n = *default_profile_params[3];
+    assert_eq!(n.mag, 4);
+    let liquidity_updates: Span<UpdatePositionParameters> = array![
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 1, sign: false } * step,
+                upper: initial_tick + i129 { mag: 1, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor / i129 { mag: 1, sign: false },
+        },
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 2, sign: false } * step,
+                upper: initial_tick + i129 { mag: 2, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor / i129 { mag: 2, sign: false },
+        },
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 3, sign: false } * step,
+                upper: initial_tick + i129 { mag: 3, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor / i129 { mag: 3, sign: false },
+        },
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 4, sign: false } * step,
+                upper: initial_tick + i129 { mag: 4, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor / i129 { mag: 4, sign: false },
+        },
+    ]
+        .span();
+
+    // check no liquidity at expected profile ticks
+    for update in liquidity_updates {
+        let position_key = PositionKey {
+            salt: 0, owner: lp.contract_address, bounds: *update.bounds,
+        };
+        let position = core.get_position(pool_key, position_key);
+        assert_eq!(position.liquidity, 0);
+    }
+
+    // roughly given initial tick = 0. there should be excess in the lp contract after
+    // @dev quoter to fix this amount excess issue
+    let amount: u128 = *default_profile_params[0].mag;
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+    lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
+
+    // check no liquidity at expected profile ticks
+    // TODO: why is profile.liquidity_updates returning an empty array after initialize_pool?
+
+    // check liquidity at expected profile ticks according to test profile
+    let mut i = 0;
+    for update in liquidity_updates {
+        let position_key = PositionKey {
+            salt: 0, owner: lp.contract_address, bounds: *update.bounds,
+        };
+        let position = core.get_position(pool_key, position_key);
+        assert_eq!(position.liquidity, *update.liquidity_delta.mag);
+        assert!(!*update.liquidity_delta.sign, "Liquidity delta should be positive");
+        assert!(*update.liquidity_delta.mag > 0, "Liquidity delta should be > 0");
+    }
+}
+
+#[test]
+#[fork("mainnet")]
+fn test_create_and_initialize_pool_transfers_funds_to_pool() {
+    let (pool_key, lp, _, profile, default_profile_params, token0, token1) = setup();
     let core: ICoreDispatcher = ekubo_core();
     let initial_tick = i129 { mag: 0, sign: false };
     // roughly given initial tick = 0. there should be excess in the lp contract after
@@ -207,7 +308,6 @@ fn test_create_and_initialize_pool_adds_initial_liquidity_to_pool() {
     let amount: u128 = *default_profile_params[0].mag;
     token0.transfer(lp.contract_address, amount.into());
     token1.transfer(lp.contract_address, amount.into());
-
     lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
 }
 
