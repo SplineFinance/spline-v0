@@ -13,7 +13,10 @@ pub fn close_delta(
             core.withdraw(token, caller, delta.mag);
         } else {
             let token = IERC20Dispatcher { contract_address: token };
-            token.transfer_from(caller, get_contract_address(), delta.mag.into());
+            assert(
+                token.transfer_from(caller, get_contract_address(), delta.mag.into()),
+                'Transfer from failed',
+            );
             token.approve(core.contract_address, delta.mag.into());
             core.pay(token.contract_address);
         }
