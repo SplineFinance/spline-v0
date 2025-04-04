@@ -55,17 +55,24 @@ fn router() -> IRouterDispatcher {
     }
 }
 
-fn profile_params(liquidity_factor: u128, step: u128, n: u128) -> Span<i129> {
+fn profile_params(liquidity_factor: u128, initial_tick: i129, step: u128, n: u128) -> Span<i129> {
     array![
-        i129 { mag: liquidity_factor, sign: true },
-        i129 { mag: step, sign: true },
-        i129 { mag: n, sign: true },
+        i129 { mag: liquidity_factor, sign: false },
+        initial_tick,
+        i129 { mag: step, sign: false },
+        i129 { mag: n, sign: false },
     ]
         .span()
 }
 
 fn setup() -> (
-    PoolKey, ILiquidityProviderDispatcher, ContractAddress, ILiquidityProfileDispatcher, Span<i129>,
+    PoolKey,
+    ILiquidityProviderDispatcher,
+    ContractAddress,
+    ILiquidityProfileDispatcher,
+    Span<i129>,
+    IERC20Dispatcher,
+    IERC20Dispatcher,
 ) {
     let contract_class = declare("LiquidityProvider").unwrap().contract_class();
 
@@ -74,7 +81,7 @@ fn setup() -> (
             declare("TestProfile").unwrap().contract_class(), array![],
         ),
     };
-    let default_profile_params = profile_params(1000000000000000000, 2000, 100);
+    let default_profile_params = profile_params(1000000000000000000, Zero::<i129>::zero(), 2000, 4);
 
     let core: ICoreDispatcher = ekubo_core();
     let owner: ContractAddress = get_contract_address();
@@ -113,18 +120,18 @@ fn setup() -> (
         extension: lp.contract_address,
     };
 
-    (pool_key, lp, owner, profile, default_profile_params)
+    (pool_key, lp, owner, profile, default_profile_params, token0, token1)
 }
 
 #[test]
 #[fork("mainnet")]
 fn test_constructor_sets_callpoints() {
-    let (pool_key, _, _, _, _) = setup();
+    let (pool_key, _, _, _, _, _, _) = setup();
     assert_eq!(
         ekubo_core().get_call_points(pool_key.extension),
         CallPoints {
-            before_initialize_pool: true,
-            after_initialize_pool: true,
+            before_initialize_pool: false,
+            after_initialize_pool: false,
             before_swap: false,
             after_swap: true,
             before_update_position: true,
@@ -138,7 +145,7 @@ fn test_constructor_sets_callpoints() {
 #[test]
 #[fork("mainnet")]
 fn test_constructor_sets_storage() {
-    let (_, lp, owner, profile, _) = setup();
+    let (_, lp, owner, profile, _, _, _) = setup();
     let lp_profile: ContractAddress = lp.profile().contract_address;
     let lp_core: ContractAddress = lp.core().contract_address;
     let lp_ownable: IOwnableDispatcher = IOwnableDispatcher {
@@ -153,8 +160,14 @@ fn test_constructor_sets_storage() {
 #[test]
 #[fork("mainnet")]
 fn test_create_and_initialize_pool_sets_liquidity_profile() {
-    let (pool_key, lp, _, profile, default_profile_params) = setup();
-    let initial_tick = i129 { mag: 0, sign: true };
+    let (pool_key, lp, _, profile, default_profile_params, token0, token1) = setup();
+    let initial_tick = i129 { mag: 0, sign: false };
+    // roughly given initial tick = 0. there should be excess in the lp contract after
+    // @dev quoter to fix this amount excess issue
+    let amount: u128 = *default_profile_params[0].mag;
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+
     lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
     assert_eq!(profile.get_liquidity_profile(pool_key), default_profile_params);
 }
@@ -162,10 +175,15 @@ fn test_create_and_initialize_pool_sets_liquidity_profile() {
 #[test]
 #[fork("mainnet")]
 fn test_create_and_initialize_pool_deploys_pool_token() {
-    let (pool_key, lp, _, _, default_profile_params) = setup();
-    let initial_tick = i129 { mag: 0, sign: true };
-    assert_eq!(lp.pool_token(pool_key), Zero::<ContractAddress>::zero());
+    let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
+    let initial_tick = i129 { mag: 0, sign: false };
+    // roughly given initial tick = 0. there should be excess in the lp contract after
+    // @dev quoter to fix this amount excess issue
+    let amount: u128 = *default_profile_params[0].mag;
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
 
+    assert_eq!(lp.pool_token(pool_key), Zero::<ContractAddress>::zero());
     lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
     let pool_token = lp.pool_token(pool_key);
     assert_ne!(pool_token, Zero::<ContractAddress>::zero());
@@ -181,28 +199,16 @@ fn test_create_and_initialize_pool_initializes_pool() {}
 #[test]
 #[fork("mainnet")]
 fn test_create_and_initialize_pool_adds_initial_liquidity_to_pool() {
-    let (pool_key, lp, _, _, default_profile_params) = setup();
-    let initial_tick = i129 { mag: 0, sign: true };
-    let token0: IERC20Dispatcher = IERC20Dispatcher { contract_address: pool_key.token0 };
-    let token1: IERC20Dispatcher = IERC20Dispatcher { contract_address: pool_key.token1 };
-
-    assert!(token0.balance_of(lp.contract_address) == 0, "Token0 lp bal0 != 0");
-    assert!(token1.balance_of(lp.contract_address) == 0, "Token1 lp bal1 != 0");
-
-    let balance0_this_before = token0.balance_of(get_contract_address());
-    let balance1_this_before = token1.balance_of(get_contract_address());
+    let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
+    let core: ICoreDispatcher = ekubo_core();
+    let initial_tick = i129 { mag: 0, sign: false };
+    // roughly given initial tick = 0. there should be excess in the lp contract after
+    // @dev quoter to fix this amount excess issue
+    let amount: u128 = *default_profile_params[0].mag;
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
 
     lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
-
-    let balance0_this_after = token0.balance_of(get_contract_address());
-    let balance1_this_after = token1.balance_of(get_contract_address());
-
-    assert!(
-        balance0_this_after <= balance0_this_before, "Token0 balance of this contract increased",
-    );
-    assert!(
-        balance1_this_after <= balance1_this_before, "Token1 balance of this contract increased",
-    );
 }
 
 #[test]

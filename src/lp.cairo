@@ -113,8 +113,8 @@ pub mod LiquidityProvider {
         core
             .set_call_points(
                 CallPoints {
-                    before_initialize_pool: true,
-                    after_initialize_pool: true,
+                    before_initialize_pool: false,
+                    after_initialize_pool: false,
                     before_swap: false, // TODO: set to true with fee harvesting
                     after_swap: true,
                     before_update_position: true,
@@ -146,23 +146,36 @@ pub mod LiquidityProvider {
 
             // initialize pool on ekubo core adding initial liquidity from profile
             let core = self.core.read();
-            core.initialize_pool(pool_key, initial_tick);
+            let _ = core.maybe_initialize_pool(pool_key, initial_tick);
+
+            // initial tick is tick want to center liquidity around
+            let initial_liquidity_factor = profile.initial_liquidity_factor(pool_key, initial_tick);
+            let liquidity_factor_delta = i129 { mag: initial_liquidity_factor, sign: false };
+
+            // add liquidity factor in storage
+            self.pool_liquidity_factors.write(pool_key, initial_liquidity_factor);
+
+            // add initial liquidity to pool on ekubo core
+            let caller = get_caller_address();
+            call_core_with_callback::<
+                (PoolKey, i129, ContractAddress), (),
+            >(core, @(pool_key, liquidity_factor_delta, caller));
+
+            // lock initial minted lp tokens forever in this contract
+            let pool_token = self.pool_tokens.read(pool_key);
+            ILiquidityProviderTokenDispatcher { contract_address: pool_token }
+                .mint(get_contract_address(), initial_liquidity_factor.try_into().unwrap());
         }
 
         fn add_liquidity(ref self: ContractState, pool_key: PoolKey, amount: u128) {
             self.check_pool_key(pool_key);
             self.check_pool_initialized(pool_key);
 
-            // obtain core lock. should also effectively lock this contract for unique pool key
-            let core = self.core.read();
-            let caller = get_caller_address();
-            let liquidity_factor_delta = i129 { mag: amount, sign: true };
-            call_core_with_callback::<
-                (PoolKey, i129, ContractAddress), (),
-            >(core, @(pool_key, liquidity_factor_delta, caller));
-
+            // calculate shares to mint
+            let liquidity_factor_delta = i129 { mag: amount, sign: false };
             let pool_token = self.pool_tokens.read(pool_key);
             let total_shares = IERC20Dispatcher { contract_address: pool_token }.total_supply();
+
             let liquidity_factor = self.pool_liquidity_factors.read(pool_key);
             let shares = self
                 .calculate_shares(total_shares, liquidity_factor_delta, liquidity_factor);
@@ -170,6 +183,13 @@ pub mod LiquidityProvider {
             // add amount to liquidity factor in storage
             let new_liquidity_factor = liquidity_factor + amount;
             self.pool_liquidity_factors.write(pool_key, new_liquidity_factor);
+
+            // obtain core lock. should also effectively lock this contract for unique pool key
+            let core = self.core.read();
+            let caller = get_caller_address();
+            call_core_with_callback::<
+                (PoolKey, i129, ContractAddress), (),
+            >(core, @(pool_key, liquidity_factor_delta, caller));
 
             // mint pool token shares to caller
             ILiquidityProviderTokenDispatcher { contract_address: pool_token }.mint(caller, shares);
@@ -179,14 +199,8 @@ pub mod LiquidityProvider {
             self.check_pool_key(pool_key);
             self.check_pool_initialized(pool_key);
 
-            // obtain core lock. should also effectively lock this contract for unique pool key
-            let core = self.core.read();
-            let caller = get_caller_address();
-            let liquidity_factor_delta = i129 { mag: amount, sign: false };
-            call_core_with_callback::<
-                (PoolKey, i129, ContractAddress), (),
-            >(core, @(pool_key, liquidity_factor_delta, caller));
-
+            // calculate shares to burn
+            let liquidity_factor_delta = i129 { mag: amount, sign: true };
             let pool_token = self.pool_tokens.read(pool_key);
             let total_shares = IERC20Dispatcher { contract_address: pool_token }.total_supply();
             let liquidity_factor = self.pool_liquidity_factors.read(pool_key);
@@ -199,7 +213,14 @@ pub mod LiquidityProvider {
             self.pool_liquidity_factors.write(pool_key, new_liquidity_factor);
 
             // burn pool token shares from caller
+            let caller = get_caller_address();
             ILiquidityProviderTokenDispatcher { contract_address: pool_token }.burn(caller, shares);
+
+            // obtain core lock. should also effectively lock this contract for unique pool key
+            let core = self.core.read();
+            call_core_with_callback::<
+                (PoolKey, i129, ContractAddress), (),
+            >(core, @(pool_key, liquidity_factor_delta, caller));
         }
 
         fn core(ref self: ContractState) -> ICoreDispatcher {
@@ -277,8 +298,8 @@ pub mod LiquidityProvider {
             // update reserves in pool
             let (pool_reserve0, pool_reserve1) = self.pool_reserves.read(pool_key);
             let reserve_delta = Delta {
-                amount0: i129 { mag: pool_reserve0, sign: true },
-                amount1: i129 { mag: pool_reserve1, sign: true },
+                amount0: i129 { mag: pool_reserve0, sign: false },
+                amount1: i129 { mag: pool_reserve1, sign: false },
             };
 
             let new_reserve_delta = reserve_delta + delta;
@@ -296,7 +317,7 @@ pub mod LiquidityProvider {
             assert(total_shares > 0, 'Total shares is 0');
             assert(factor > 0, 'Factor is 0');
 
-            let denom: u256 = if delta.sign {
+            let denom: u256 = if !delta.sign {
                 factor.try_into().unwrap() + delta.mag.try_into().unwrap()
             } else {
                 factor.try_into().unwrap()
@@ -339,32 +360,14 @@ pub mod LiquidityProvider {
         fn before_initialize_pool(
             ref self: ContractState, caller: ContractAddress, pool_key: PoolKey, initial_tick: i129,
         ) {
-            assert(caller == get_contract_address(), 'Only lp can initialize');
+            panic!("Not used");
         }
 
         // adds initial liquidity to pool according to profile liquidity scalar
         fn after_initialize_pool(
             ref self: ContractState, caller: ContractAddress, pool_key: PoolKey, initial_tick: i129,
         ) {
-            let core = self.core.read();
-            check_caller_is_core(core);
-
-            let profile = self.profile.read();
-            let initial_liquidity_factor = profile.initial_liquidity_factor(pool_key, initial_tick);
-
-            let liquidity_factor_delta = i129 { mag: initial_liquidity_factor, sign: true };
-            call_core_with_callback::<
-                (PoolKey, i129, ContractAddress), (),
-            >(core, @(pool_key, liquidity_factor_delta, caller));
-
-            // add liquidity factor in storage
-            self.pool_liquidity_factors.write(pool_key, initial_liquidity_factor);
-
-            // mint pool token shares to this address (burning initial lp tokens) as caller is this
-            // contract
-            let pool_token = self.pool_tokens.read(pool_key);
-            ILiquidityProviderTokenDispatcher { contract_address: pool_token }
-                .mint(caller, initial_liquidity_factor.try_into().unwrap());
+            panic!("Not used");
         }
 
         fn before_swap(

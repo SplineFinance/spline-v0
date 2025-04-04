@@ -1,6 +1,7 @@
 #[starknet::interface]
 pub trait ILiquidityProfile<TStorage> {
     // Returns the initial liquidity factor used on pool initialization
+    // for desired initial tick to center liquidity around
     // Should be small as this is the amount of initial liquidity that will be burned
     fn initial_liquidity_factor(
         ref self: TStorage,
