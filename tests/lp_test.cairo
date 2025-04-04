@@ -348,8 +348,46 @@ fn test_create_and_initialize_pool_transfers_funds_to_pool() {
 
 #[test]
 #[fork("mainnet")]
-fn test_create_and_initialize_pool_mints_initial_shares_to_liquidity_provider() {}
+fn test_create_and_initialize_pool_mints_initial_shares_to_liquidity_provider() {
+    let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
+
+    let initial_liquidity_factor = *default_profile_params[0];
+    let step = *default_profile_params[2];
+    let n = *default_profile_params[3];
+    let initial_tick = i129 { mag: 0, sign: false };
+    // roughly given initial tick = 0. there should be excess in the lp contract after
+    // @dev quoter to fix this amount excess issue
+    let amount: u128 = (step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
+    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
+
+    lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
+
+    let pool_token = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) };
+    assert_eq!(pool_token.balance_of(lp.contract_address), initial_liquidity_factor.mag.into());
+    assert_eq!(pool_token.total_supply(), initial_liquidity_factor.mag.into());
+}
 
 #[test]
 #[fork("mainnet")]
-fn test_create_and_initialize_pool_sets_initial_liquidity_factor() {}
+fn test_create_and_initialize_pool_sets_initial_liquidity_factor() {
+    let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
+
+    let initial_liquidity_factor = *default_profile_params[0];
+    let step = *default_profile_params[2];
+    let n = *default_profile_params[3];
+    let initial_tick = i129 { mag: 0, sign: false };
+    // roughly given initial tick = 0. there should be excess in the lp contract after
+    // @dev quoter to fix this amount excess issue
+    let amount: u128 = (step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
+    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
+
+    assert_eq!(lp.pool_liquidity_factor(pool_key), 0);
+    lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
+    assert_eq!(lp.pool_liquidity_factor(pool_key), initial_liquidity_factor.mag);
+}

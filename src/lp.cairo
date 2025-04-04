@@ -25,6 +25,9 @@ pub trait ILiquidityProvider<TStorage> {
     fn pool_token(
         ref self: TStorage, pool_key: ekubo::types::keys::PoolKey,
     ) -> starknet::ContractAddress;
+
+    // returns the current liquidity factor for pool with ekubo key `pool_key`
+    fn pool_liquidity_factor(ref self: TStorage, pool_key: ekubo::types::keys::PoolKey) -> u128;
 }
 
 #[starknet::contract]
@@ -243,6 +246,10 @@ pub mod LiquidityProvider {
         fn pool_token(ref self: ContractState, pool_key: PoolKey) -> ContractAddress {
             self.pool_tokens.read(pool_key)
         }
+
+        fn pool_liquidity_factor(ref self: ContractState, pool_key: PoolKey) -> u128 {
+            self.pool_liquidity_factors.read(pool_key)
+        }
     }
 
     #[generate_trait]
@@ -397,7 +404,6 @@ pub mod LiquidityProvider {
         ) {
             let core = self.core.read();
             check_caller_is_core(core);
-
             self.update_reserves(pool_key, delta);
         }
 
@@ -420,7 +426,6 @@ pub mod LiquidityProvider {
         ) {
             let core = self.core.read();
             check_caller_is_core(core);
-
             self.update_reserves(pool_key, delta);
         }
 
