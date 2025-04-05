@@ -395,6 +395,37 @@ fn test_create_and_initialize_pool_sets_initial_liquidity_factor() {
 
 #[test]
 #[fork("mainnet")]
+fn test_create_and_initialize_pool_updates_pool_reserves() {
+    let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
+    let step = *default_profile_params[2];
+    let n = *default_profile_params[3];
+    let initial_tick = i129 { mag: 0, sign: false };
+    // roughly given initial tick = 0. there should be excess in the lp contract after
+    // @dev quoter to fix this amount excess issue
+    let amount: u128 = (step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
+    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
+
+    let (reserves0, reserves1) = lp.pool_reserves(pool_key);
+    assert_eq!(reserves0, 0);
+    assert_eq!(reserves1, 0);
+
+    lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
+
+    let balance0: u256 = token0.balance_of(lp.contract_address);
+    let balance1: u256 = token1.balance_of(lp.contract_address);
+    let amount0_transferred: u256 = amount.into() - balance0;
+    let amount1_transferred: u256 = amount.into() - balance1;
+
+    let (reserves0_after, reserves1_after) = lp.pool_reserves(pool_key);
+    assert_eq!(reserves0_after.into(), reserves0.into() + amount0_transferred);
+    assert_eq!(reserves1_after.into(), reserves1.into() + amount1_transferred);
+}
+
+#[test]
+#[fork("mainnet")]
 #[should_panic(expected: ('OWNER_ONLY',))]
 fn test_create_and_initialize_pool_fails_if_not_owner() {
     let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
@@ -738,9 +769,8 @@ fn test_add_liquidity_updates_pool_reserves() {
 
     lp.add_liquidity(pool_key, factor);
 
-    let (balance0, balance1) = (
-        token0.balance_of(lp.contract_address), token1.balance_of(lp.contract_address),
-    );
+    let balance0: u256 = token0.balance_of(lp.contract_address);
+    let balance1: u256 = token1.balance_of(lp.contract_address);
     let amount0_transferred: u256 = amount.into() - balance0;
     let amount1_transferred: u256 = amount.into() - balance1;
 
