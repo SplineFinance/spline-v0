@@ -686,8 +686,7 @@ fn test_add_liquidity_transfers_funds_to_pool() {
     let step = *default_profile_params[2];
     let n = *default_profile_params[3];
     let factor = 100000000000000000000; // 100 * 1e18
-    let amount: u128 = (3 * step.mag * n.mag * (factor))
-        / (1900000); // 3x usual given multiple mints below
+    let amount: u128 = (step.mag * n.mag * (factor)) / (1900000);
     token0.transfer(lp.contract_address, amount.into());
     token1.transfer(lp.contract_address, amount.into());
 
@@ -719,4 +718,27 @@ fn test_add_liquidity_transfers_funds_to_pool() {
         .sweep(token1.contract_address, get_contract_address());
     assert_eq!(token0.balance_of(lp.contract_address), 0);
     assert_eq!(token1.balance_of(lp.contract_address), 0);
+}
+
+#[test]
+#[fork("mainnet")]
+#[should_panic(expected: ('Extension not this contract',))]
+fn test_add_liquidity_fails_if_extension_not_liquidity_provider() {
+    let (_, lp, _, _, _, token0, token1) = setup_add_liquidity();
+    let pool_key = PoolKey {
+        token0: token0.contract_address,
+        token1: token1.contract_address,
+        fee: 34028236692093846346337460743176821, // 1 bps (= 2**128 / 10000)
+        tick_spacing: 1, // 0.01 bps
+        extension: Zero::<ContractAddress>::zero(),
+    };
+    lp.add_liquidity(pool_key, 100000000000000000000);
+}
+
+#[test]
+#[fork("mainnet")]
+#[should_panic(expected: ('Pool token not deployed',))]
+fn test_add_liquidity_fails_if_not_initialized() {
+    let (pool_key, lp, _, _, _, _, _) = setup();
+    lp.add_liquidity(pool_key, 100000000000000000000);
 }
