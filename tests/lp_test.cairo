@@ -21,6 +21,7 @@ use spline_v0::profile::{ILiquidityProfileDispatcher, ILiquidityProfileDispatche
 use spline_v0::sweep::{ISweepableDispatcher, ISweepableDispatcherTrait};
 use spline_v0::token::{ILiquidityProviderTokenDispatcher, ILiquidityProviderTokenDispatcherTrait};
 use starknet::{ClassHash, ContractAddress, contract_address_const, get_contract_address};
+
 fn deploy_contract(class: @ContractClass, calldata: Array<felt252>) -> ContractAddress {
     let (contract_address, _) = class.deploy(@calldata).expect('Deploy contract failed');
     contract_address
