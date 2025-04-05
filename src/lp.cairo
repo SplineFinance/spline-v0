@@ -146,12 +146,12 @@ pub mod LiquidityProvider {
         core
             .set_call_points(
                 CallPoints {
-                    before_initialize_pool: false,
+                    before_initialize_pool: true,
                     after_initialize_pool: false,
                     before_swap: false, // TODO: set to true with fee harvesting
                     after_swap: true,
                     before_update_position: true,
-                    after_update_position: true,
+                    after_update_position: false,
                     before_collect_fees: false,
                     after_collect_fees: false,
                 },
@@ -180,7 +180,7 @@ pub mod LiquidityProvider {
 
             // initialize pool on ekubo core adding initial liquidity from profile
             let core = self.core.read();
-            let _ = core.maybe_initialize_pool(pool_key, initial_tick);
+            core.initialize_pool(pool_key, initial_tick);
 
             // initial tick is tick want to center liquidity around
             let initial_liquidity_factor = profile.initial_liquidity_factor(pool_key, initial_tick);
@@ -412,6 +412,9 @@ pub mod LiquidityProvider {
             // modify liquidity profile positions on ekubo core
             let balance_delta = self.update_positions(pool_key, liquidity_factor_delta);
 
+            // update tracked reserves in storage
+            self.update_reserves(pool_key, balance_delta);
+
             // settle up balance deltas with core
             handle_delta(core, pool_key.token0, balance_delta.amount0, caller);
             handle_delta(core, pool_key.token1, balance_delta.amount1, caller);
@@ -425,10 +428,9 @@ pub mod LiquidityProvider {
         fn before_initialize_pool(
             ref self: ContractState, caller: ContractAddress, pool_key: PoolKey, initial_tick: i129,
         ) {
-            panic!("Not used");
+            panic!("Only from liquidity provider");
         }
 
-        // adds initial liquidity to pool according to profile liquidity scalar
         fn after_initialize_pool(
             ref self: ContractState, caller: ContractAddress, pool_key: PoolKey, initial_tick: i129,
         ) {
@@ -462,8 +464,7 @@ pub mod LiquidityProvider {
             pool_key: PoolKey,
             params: UpdatePositionParameters,
         ) {
-            // TODO: check if this fires when update position
-            assert(caller == get_contract_address(), 'Only lp can update position');
+            panic!("Only from liquidity provider");
         }
 
         fn after_update_position(
@@ -473,9 +474,7 @@ pub mod LiquidityProvider {
             params: UpdatePositionParameters,
             delta: Delta,
         ) {
-            let core = self.core.read();
-            check_caller_is_core(core);
-            self.update_reserves(pool_key, delta);
+            panic!("Not used");
         }
 
         fn before_collect_fees(

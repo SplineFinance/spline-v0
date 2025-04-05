@@ -136,12 +136,12 @@ fn test_constructor_sets_callpoints() {
     assert_eq!(
         ekubo_core().get_call_points(pool_key.extension),
         CallPoints {
-            before_initialize_pool: false,
+            before_initialize_pool: true,
             after_initialize_pool: false,
             before_swap: false,
             after_swap: true,
             before_update_position: true,
-            after_update_position: true,
+            after_update_position: false,
             before_collect_fees: false,
             after_collect_fees: false,
         },
