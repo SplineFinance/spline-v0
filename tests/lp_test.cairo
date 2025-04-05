@@ -552,3 +552,130 @@ fn test_add_liquidity_multiple_mints_shares() {
     assert_eq!(pool_token.total_supply(), total_shares + 3 * shares);
 }
 
+#[test]
+#[fork("mainnet")]
+fn test_add_liquidity_adds_liquidity_to_pool() {
+    let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup_add_liquidity();
+    let initial_tick = i129 { mag: 0, sign: false };
+    let initial_liquidity_factor = lp.pool_liquidity_factor(pool_key);
+    assert_eq!(initial_liquidity_factor, 1000000000000000000);
+
+    let initial_liquidity_factor = *default_profile_params[0];
+    let factor = 100000000000000000000; // 100 * 1e18
+    let liquidity_factor: i129 = i129 { mag: factor, sign: false };
+    let step = *default_profile_params[2];
+    let n = *default_profile_params[3];
+    assert_eq!(n.mag, 4);
+    let initial_liquidity_updates: Span<UpdatePositionParameters> = array![
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 1, sign: false } * step,
+                upper: initial_tick + i129 { mag: 1, sign: false } * step,
+            },
+            liquidity_delta: initial_liquidity_factor / i129 { mag: 1, sign: false },
+        },
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 2, sign: false } * step,
+                upper: initial_tick + i129 { mag: 2, sign: false } * step,
+            },
+            liquidity_delta: initial_liquidity_factor / i129 { mag: 2, sign: false },
+        },
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 3, sign: false } * step,
+                upper: initial_tick + i129 { mag: 3, sign: false } * step,
+            },
+            liquidity_delta: initial_liquidity_factor / i129 { mag: 3, sign: false },
+        },
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 4, sign: false } * step,
+                upper: initial_tick + i129 { mag: 4, sign: false } * step,
+            },
+            liquidity_delta: initial_liquidity_factor / i129 { mag: 4, sign: false },
+        },
+    ]
+        .span();
+    let liquidity_updates: Span<UpdatePositionParameters> = array![
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 1, sign: false } * step,
+                upper: initial_tick + i129 { mag: 1, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor / i129 { mag: 1, sign: false },
+        },
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 2, sign: false } * step,
+                upper: initial_tick + i129 { mag: 2, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor / i129 { mag: 2, sign: false },
+        },
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 3, sign: false } * step,
+                upper: initial_tick + i129 { mag: 3, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor / i129 { mag: 3, sign: false },
+        },
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 4, sign: false } * step,
+                upper: initial_tick + i129 { mag: 4, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor / i129 { mag: 4, sign: false },
+        },
+    ]
+        .span();
+
+    // check initial liquidity at expected profile ticks
+    let core = ekubo_core();
+    for update in initial_liquidity_updates {
+        let position_key = PositionKey {
+            salt: 0, owner: lp.contract_address, bounds: *update.bounds,
+        };
+        let position = core.get_position(pool_key, position_key);
+        assert_eq!(position.liquidity, *update.liquidity_delta.mag);
+    }
+
+    let amount: u128 = (3 * step.mag * n.mag * (factor))
+        / (1900000); // 3x usual given multiple mints below
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
+    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
+
+    // now add the liquidity
+    lp.add_liquidity(pool_key, factor);
+
+    // TODO: check why provider getter not working as expected in test (but works in contract)
+
+    // check liquidity at expected profile ticks according to test profile
+    let mut j = 0;
+    for update in liquidity_updates {
+        let position_key = PositionKey {
+            salt: 0, owner: lp.contract_address, bounds: *update.bounds,
+        };
+        let position = core.get_position(pool_key, position_key);
+        assert_eq!(
+            position.liquidity,
+            *update.liquidity_delta.mag + *initial_liquidity_updates[j].liquidity_delta.mag,
+        ); // should add liq to initial amount
+        assert!(!*update.liquidity_delta.sign, "Liquidity delta should be positive");
+        assert!(*update.liquidity_delta.mag > 0, "Liquidity delta should be > 0");
+        j += 1;
+    }
+}
+
+#[test]
+#[fork("mainnet")]
+fn test_add_liquidity_transfers_funds_to_pool() {}
