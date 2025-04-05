@@ -33,6 +33,9 @@ pub trait ILiquidityProvider<TStorage> {
 
     // returns the current liquidity factor for pool with ekubo key `pool_key`
     fn pool_liquidity_factor(ref self: TStorage, pool_key: ekubo::types::keys::PoolKey) -> u128;
+
+    // returns the current reserves added by liquidity provider for pool with ekubo key `pool_key`
+    fn pool_reserves(ref self: TStorage, pool_key: ekubo::types::keys::PoolKey) -> (u128, u128);
 }
 
 #[starknet::contract]
@@ -40,9 +43,11 @@ pub mod LiquidityProvider {
     use core::felt252_div;
     use core::num::traits::Zero;
     use core::poseidon::poseidon_hash_span;
+    use ekubo::components::owned::Owned as OwnedComponent;
     use ekubo::components::shared_locker::{
         call_core_with_callback, check_caller_is_core, consume_callback_data, handle_delta,
     };
+    use ekubo::components::upgradeable::{IHasInterface, Upgradeable as UpgradeableComponent};
     use ekubo::components::util::serialize;
     use ekubo::interfaces::core::{
         ICoreDispatcher, ICoreDispatcherTrait, IExtension, ILocker, SwapParameters,
@@ -53,7 +58,6 @@ pub mod LiquidityProvider {
     use ekubo::types::delta::Delta;
     use ekubo::types::i129::i129;
     use ekubo::types::keys::PoolKey;
-    use openzeppelin_access::ownable::OwnableComponent;
     use openzeppelin_token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
     use openzeppelin_utils::interfaces::{
         IUniversalDeployerDispatcher, IUniversalDeployerDispatcherTrait,
@@ -72,13 +76,16 @@ pub mod LiquidityProvider {
 
     const UDC_ADDRESS: felt252 = 0x04a64cd09a853868621d94cae9952b106f2c36a3f81260f85de6696c6b050221;
 
-    component!(path: OwnableComponent, storage: ownable, event: OwnableEvent);
-    component!(path: SweepableComponent, storage: sweepable, event: SweepableEvent);
-
+    component!(path: OwnedComponent, storage: owned, event: OwnedEvent);
     #[abi(embed_v0)]
-    impl OwnableImpl = OwnableComponent::OwnableMixinImpl<ContractState>;
-    impl OwnableInternalImpl = OwnableComponent::InternalImpl<ContractState>;
+    impl Owned = OwnedComponent::OwnedImpl<ContractState>;
+    impl OwnableImpl = OwnedComponent::OwnableImpl<ContractState>;
 
+    component!(path: UpgradeableComponent, storage: upgradeable, event: UpgradeableEvent);
+    #[abi(embed_v0)]
+    impl UpgradeableImpl = UpgradeableComponent::UpgradeableImpl<ContractState>;
+
+    component!(path: SweepableComponent, storage: sweepable, event: SweepableEvent);
     #[abi(embed_v0)]
     impl SweepableImpl = SweepableComponent::Sweepable<ContractState>;
 
@@ -91,7 +98,9 @@ pub mod LiquidityProvider {
         pool_tokens: Map<PoolKey, ContractAddress>,
         pool_token_class_hash: ClassHash,
         #[substorage(v0)]
-        ownable: OwnableComponent::Storage,
+        upgradeable: UpgradeableComponent::Storage,
+        #[substorage(v0)]
+        owned: OwnedComponent::Storage,
         #[substorage(v0)]
         sweepable: SweepableComponent::Storage,
     }
@@ -100,9 +109,16 @@ pub mod LiquidityProvider {
     #[derive(Drop, starknet::Event)]
     enum Event {
         #[flat]
-        OwnableEvent: OwnableComponent::Event,
-        #[flat]
+        UpgradeableEvent: UpgradeableComponent::Event,
+        OwnedEvent: OwnedComponent::Event,
         SweepableEvent: SweepableComponent::Event,
+    }
+
+    #[abi(embed_v0)]
+    impl HasInterfaceImpl of IHasInterface<ContractState> {
+        fn get_primary_interface_id(self: @ContractState) -> felt252 {
+            return selector!("spline_v0::lp::LiquidityProvider");
+        }
     }
 
     #[constructor]
@@ -113,7 +129,7 @@ pub mod LiquidityProvider {
         owner: ContractAddress,
         pool_token_class_hash: ClassHash,
     ) {
-        self.ownable.initializer(owner);
+        self.initialize_owned(owner);
         self.profile.write(profile);
         self.core.write(core);
         self.pool_token_class_hash.write(pool_token_class_hash);
@@ -150,7 +166,7 @@ pub mod LiquidityProvider {
             initial_tick: i129,
             profile_params: Span<i129>,
         ) {
-            self.ownable.assert_only_owner();
+            self.require_owner();
             self.check_pool_key(pool_key);
             self.check_pool_not_initialized(pool_key);
 
@@ -258,6 +274,10 @@ pub mod LiquidityProvider {
 
         fn pool_liquidity_factor(ref self: ContractState, pool_key: PoolKey) -> u128 {
             self.pool_liquidity_factors.read(pool_key)
+        }
+
+        fn pool_reserves(ref self: ContractState, pool_key: PoolKey) -> (u128, u128) {
+            self.pool_reserves.read(pool_key)
         }
     }
 

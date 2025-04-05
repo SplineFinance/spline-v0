@@ -1,4 +1,5 @@
 use core::num::traits::Zero;
+use ekubo::components::owned::{IOwnedDispatcher, IOwnedDispatcherTrait};
 use ekubo::components::util::serialize;
 use ekubo::interfaces::core::{
     ICoreDispatcher, ICoreDispatcherTrait, IExtension, ILocker, SwapParameters,
@@ -10,7 +11,6 @@ use ekubo::types::call_points::CallPoints;
 use ekubo::types::i129::i129;
 use ekubo::types::keys::{PoolKey, PositionKey};
 use ekubo::types::pool_price::PoolPrice;
-use openzeppelin_access::ownable::interface::{IOwnableDispatcher, IOwnableDispatcherTrait};
 use openzeppelin_token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
 use snforge_std::{
     ContractClass, ContractClassTrait, DeclareResultTrait, declare, start_cheat_caller_address,
@@ -154,10 +154,8 @@ fn test_constructor_sets_storage() {
     let (_, lp, owner, profile, _, _, _) = setup();
     let lp_profile: ContractAddress = lp.profile().contract_address;
     let lp_core: ContractAddress = lp.core().contract_address;
-    let lp_ownable: IOwnableDispatcher = IOwnableDispatcher {
-        contract_address: lp.contract_address,
-    };
-    let lp_owner: ContractAddress = lp_ownable.owner();
+    let lp_owned: IOwnedDispatcher = IOwnedDispatcher { contract_address: lp.contract_address };
+    let lp_owner: ContractAddress = lp_owned.get_owner();
     assert_eq!(lp_profile, profile.contract_address);
     assert_eq!(lp_core, ekubo_core().contract_address);
     assert_eq!(lp_owner, owner);
@@ -397,7 +395,7 @@ fn test_create_and_initialize_pool_sets_initial_liquidity_factor() {
 
 #[test]
 #[fork("mainnet")]
-#[should_panic(expected: ('Caller is not the owner',))]
+#[should_panic(expected: ('OWNER_ONLY',))]
 fn test_create_and_initialize_pool_fails_if_not_owner() {
     let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
     let initial_tick = i129 { mag: 0, sign: false };
@@ -718,6 +716,37 @@ fn test_add_liquidity_transfers_funds_to_pool() {
         .sweep(token1.contract_address, get_contract_address());
     assert_eq!(token0.balance_of(lp.contract_address), 0);
     assert_eq!(token1.balance_of(lp.contract_address), 0);
+}
+
+#[test]
+#[fork("mainnet")]
+fn test_add_liquidity_updates_pool_reserves() {
+    let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup_add_liquidity();
+    let initial_liquidity_factor = lp.pool_liquidity_factor(pool_key);
+    assert_eq!(initial_liquidity_factor, 1000000000000000000);
+
+    let step = *default_profile_params[2];
+    let n = *default_profile_params[3];
+    let factor = 100000000000000000000; // 100 * 1e18
+    let amount: u128 = (step.mag * n.mag * (factor)) / (1900000);
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
+    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
+
+    let (reserves0, reserves1) = lp.pool_reserves(pool_key);
+
+    lp.add_liquidity(pool_key, factor);
+
+    let (balance0, balance1) = (
+        token0.balance_of(lp.contract_address), token1.balance_of(lp.contract_address),
+    );
+    let amount0_transferred: u256 = amount.into() - balance0;
+    let amount1_transferred: u256 = amount.into() - balance1;
+
+    let (reserves0_after, reserves1_after) = lp.pool_reserves(pool_key);
+    assert_eq!(reserves0_after.into(), reserves0.into() + amount0_transferred);
+    assert_eq!(reserves1_after.into(), reserves1.into() + amount1_transferred);
 }
 
 #[test]
