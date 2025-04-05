@@ -488,3 +488,67 @@ fn test_add_liquidity_updates_liquidity_factor() {
     assert_eq!(lp.pool_liquidity_factor(pool_key), initial_liquidity_factor + factor);
 }
 
+#[test]
+#[fork("mainnet")]
+fn test_add_liquidity_mints_shares() {
+    let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup_add_liquidity();
+    let initial_liquidity_factor = lp.pool_liquidity_factor(pool_key);
+    assert_eq!(initial_liquidity_factor, 1000000000000000000);
+
+    let step = *default_profile_params[2];
+    let n = *default_profile_params[3];
+    let factor = 100000000000000000000; // 100 * 1e18
+    let amount: u128 = (step.mag * n.mag * (factor)) / (1900000);
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
+    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
+
+    // state prior after create and initialize pool
+    let pool_token: IERC20Dispatcher = IERC20Dispatcher {
+        contract_address: lp.pool_token(pool_key),
+    };
+    let total_shares = pool_token.total_supply(); // 1e18 given initial liquidity factor of 1e18
+    assert_eq!(pool_token.balance_of(lp.contract_address), total_shares);
+
+    // now add more liquidity
+    let shares = 100000000000000000000; // 100 * 1e18 given initial liquidity factor of 1e18
+    assert_eq!(lp.add_liquidity(pool_key, factor), shares);
+    assert_eq!(pool_token.balance_of(get_contract_address()), shares);
+    assert_eq!(pool_token.total_supply(), total_shares + shares);
+}
+
+#[test]
+#[fork("mainnet")]
+fn test_add_liquidity_multiple_mints_shares() {
+    let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup_add_liquidity();
+    let initial_liquidity_factor = lp.pool_liquidity_factor(pool_key);
+    assert_eq!(initial_liquidity_factor, 1000000000000000000);
+
+    let step = *default_profile_params[2];
+    let n = *default_profile_params[3];
+    let factor = 100000000000000000000; // 100 * 1e18
+    let amount: u128 = (3 * step.mag * n.mag * (factor))
+        / (1900000); // 3x usual given multiple mints below
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
+    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
+
+    // state prior after create and initialize pool
+    let pool_token: IERC20Dispatcher = IERC20Dispatcher {
+        contract_address: lp.pool_token(pool_key),
+    };
+    let total_shares = pool_token.total_supply(); // 1e18 given initial liquidity factor of 1e18
+    assert_eq!(pool_token.balance_of(lp.contract_address), total_shares);
+
+    // now add more liquidity
+    let shares = 100000000000000000000; // 100 * 1e18 given initial liquidity factor of 1e18
+    let result_first: u256 = lp.add_liquidity(pool_key, factor);
+    let result_second: u256 = lp.add_liquidity(pool_key, 2 * factor);
+    assert_eq!(result_first, shares);
+    assert_eq!(result_second, 2 * shares);
+    assert_eq!(pool_token.balance_of(get_contract_address()), 3 * shares);
+    assert_eq!(pool_token.total_supply(), total_shares + 3 * shares);
+}
+
