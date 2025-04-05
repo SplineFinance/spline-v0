@@ -440,3 +440,51 @@ fn test_create_and_initialize_pool_fails_if_extension_not_liquidity_provider() {
     };
     lp.create_and_initialize_pool(new_pool_key, initial_tick, default_profile_params);
 }
+
+fn setup_add_liquidity() -> (
+    PoolKey,
+    ILiquidityProviderDispatcher,
+    ContractAddress,
+    ILiquidityProfileDispatcher,
+    Span<i129>,
+    IERC20Dispatcher,
+    IERC20Dispatcher,
+) {
+    let (pool_key, lp, owner, profile, default_profile_params, token0, token1) = setup();
+    let initial_tick = i129 { mag: 0, sign: false };
+    let step = *default_profile_params[2];
+    let n = *default_profile_params[3];
+    let initial_amount: u128 = (step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
+    token0.transfer(lp.contract_address, initial_amount.into());
+    token1.transfer(lp.contract_address, initial_amount.into());
+    assert_eq!(token0.balance_of(lp.contract_address), initial_amount.into());
+    assert_eq!(token1.balance_of(lp.contract_address), initial_amount.into());
+    lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
+    ISweepableDispatcher { contract_address: lp.contract_address }
+        .sweep(token0.contract_address, get_contract_address());
+    ISweepableDispatcher { contract_address: lp.contract_address }
+        .sweep(token1.contract_address, get_contract_address());
+    (pool_key, lp, owner, profile, default_profile_params, token0, token1)
+}
+
+#[test]
+#[fork("mainnet")]
+fn test_add_liquidity_updates_liquidity_factor() {
+    let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup_add_liquidity();
+    let initial_liquidity_factor = lp.pool_liquidity_factor(pool_key);
+    assert_eq!(initial_liquidity_factor, 1000000000000000000);
+
+    let step = *default_profile_params[2];
+    let n = *default_profile_params[3];
+    let factor = 100000000000000000000; // 100 * 1e18
+    let amount: u128 = (step.mag * n.mag * (factor)) / (1900000);
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
+    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
+
+    // now add more liquidity
+    lp.add_liquidity(pool_key, factor);
+    assert_eq!(lp.pool_liquidity_factor(pool_key), initial_liquidity_factor + factor);
+}
+

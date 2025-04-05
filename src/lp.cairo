@@ -10,10 +10,10 @@ pub trait ILiquidityProvider<TStorage> {
     );
 
     /// adds an amount of liquidity factor to pool with ekubo key `pool_key`
-    fn add_liquidity(ref self: TStorage, pool_key: ekubo::types::keys::PoolKey, amount: u128);
+    fn add_liquidity(ref self: TStorage, pool_key: ekubo::types::keys::PoolKey, factor: u128);
 
     /// removes an amount of liquidity factor from pool with ekubo key `pool_key`
-    fn remove_liquidity(ref self: TStorage, pool_key: ekubo::types::keys::PoolKey, amount: u128);
+    fn remove_liquidity(ref self: TStorage, pool_key: ekubo::types::keys::PoolKey, factor: u128);
 
     /// returns the ekubo core for pools deployed by this liquidity provider
     fn core(ref self: TStorage) -> ekubo::interfaces::core::ICoreDispatcher;
@@ -180,12 +180,12 @@ pub mod LiquidityProvider {
                 .mint(get_contract_address(), initial_liquidity_factor.try_into().unwrap());
         }
 
-        fn add_liquidity(ref self: ContractState, pool_key: PoolKey, amount: u128) {
+        fn add_liquidity(ref self: ContractState, pool_key: PoolKey, factor: u128) {
             self.check_pool_key(pool_key);
             self.check_pool_initialized(pool_key);
 
             // calculate shares to mint
-            let liquidity_factor_delta = i129 { mag: amount, sign: false };
+            let liquidity_factor_delta = i129 { mag: factor, sign: false };
             let pool_token = self.pool_tokens.read(pool_key);
             let total_shares = IERC20Dispatcher { contract_address: pool_token }.total_supply();
 
@@ -194,7 +194,7 @@ pub mod LiquidityProvider {
                 .calculate_shares(total_shares, liquidity_factor_delta, liquidity_factor);
 
             // add amount to liquidity factor in storage
-            let new_liquidity_factor = liquidity_factor + amount;
+            let new_liquidity_factor = liquidity_factor + factor;
             self.pool_liquidity_factors.write(pool_key, new_liquidity_factor);
 
             // obtain core lock. should also effectively lock this contract for unique pool key
@@ -208,12 +208,12 @@ pub mod LiquidityProvider {
             ILiquidityProviderTokenDispatcher { contract_address: pool_token }.mint(caller, shares);
         }
 
-        fn remove_liquidity(ref self: ContractState, pool_key: PoolKey, amount: u128) {
+        fn remove_liquidity(ref self: ContractState, pool_key: PoolKey, factor: u128) {
             self.check_pool_key(pool_key);
             self.check_pool_initialized(pool_key);
 
             // calculate shares to burn
-            let liquidity_factor_delta = i129 { mag: amount, sign: true };
+            let liquidity_factor_delta = i129 { mag: factor, sign: true };
             let pool_token = self.pool_tokens.read(pool_key);
             let total_shares = IERC20Dispatcher { contract_address: pool_token }.total_supply();
             let liquidity_factor = self.pool_liquidity_factors.read(pool_key);
@@ -221,8 +221,8 @@ pub mod LiquidityProvider {
                 .calculate_shares(total_shares, liquidity_factor_delta, liquidity_factor);
 
             // remove amount from liquidity factor in storage
-            assert(liquidity_factor >= amount, 'Not enough liquidity');
-            let new_liquidity_factor = liquidity_factor - amount;
+            assert(liquidity_factor >= factor, 'Not enough liquidity');
+            let new_liquidity_factor = liquidity_factor - factor;
             self.pool_liquidity_factors.write(pool_key, new_liquidity_factor);
 
             // burn pool token shares from caller
