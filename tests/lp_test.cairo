@@ -678,4 +678,45 @@ fn test_add_liquidity_adds_liquidity_to_pool() {
 
 #[test]
 #[fork("mainnet")]
-fn test_add_liquidity_transfers_funds_to_pool() {}
+fn test_add_liquidity_transfers_funds_to_pool() {
+    let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup_add_liquidity();
+    let initial_liquidity_factor = lp.pool_liquidity_factor(pool_key);
+    assert_eq!(initial_liquidity_factor, 1000000000000000000);
+
+    let step = *default_profile_params[2];
+    let n = *default_profile_params[3];
+    let factor = 100000000000000000000; // 100 * 1e18
+    let amount: u128 = (3 * step.mag * n.mag * (factor))
+        / (1900000); // 3x usual given multiple mints below
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+
+    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
+    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
+
+    let core = ekubo_core();
+    let ekubo_balance0: u256 = token0.balance_of(core.contract_address);
+    let ekubo_balance1: u256 = token1.balance_of(core.contract_address);
+
+    lp.add_liquidity(pool_key, factor);
+
+    let (balance0, balance1) = (
+        token0.balance_of(lp.contract_address), token1.balance_of(lp.contract_address),
+    );
+    assert_lt!(balance0, amount.into() / 10); // less than 10% left of dust
+    assert_lt!(balance1, amount.into() / 10); // less than 10% left of dust
+
+    let (ekubo_balance0_after, ekubo_balance1_after) = (
+        token0.balance_of(core.contract_address), token1.balance_of(core.contract_address),
+    );
+    assert_eq!(ekubo_balance0_after, ekubo_balance0 + amount.into() - balance0);
+    assert_eq!(ekubo_balance1_after, ekubo_balance1 + amount.into() - balance1);
+
+    // sweep and check that no dust left
+    ISweepableDispatcher { contract_address: lp.contract_address }
+        .sweep(token0.contract_address, get_contract_address());
+    ISweepableDispatcher { contract_address: lp.contract_address }
+        .sweep(token1.contract_address, get_contract_address());
+    assert_eq!(token0.balance_of(lp.contract_address), 0);
+    assert_eq!(token1.balance_of(lp.contract_address), 0);
+}
