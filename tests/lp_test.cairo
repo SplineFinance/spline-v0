@@ -5,6 +5,7 @@ use ekubo::interfaces::core::{
     ICoreDispatcher, ICoreDispatcherTrait, IExtension, ILocker, SwapParameters,
     UpdatePositionParameters,
 };
+use ekubo::interfaces::positions::{IPositionsDispatcher, IPositionsDispatcherTrait};
 use ekubo::interfaces::router::{IRouterDispatcher, IRouterDispatcherTrait};
 use ekubo::types::bounds::Bounds;
 use ekubo::types::call_points::CallPoints;
@@ -49,6 +50,14 @@ fn ekubo_core() -> ICoreDispatcher {
     ICoreDispatcher {
         contract_address: contract_address_const::<
             0x00000005dd3D2F4429AF886cD1a3b08289DBcEa99A294197E9eB43b0e0325b4b,
+        >(),
+    }
+}
+
+fn positions() -> IPositionsDispatcher {
+    IPositionsDispatcher {
+        contract_address: contract_address_const::<
+            0x02e0af29598b407c8716b17f6d2795eca1b471413fa03fb145a5e33722184067,
         >(),
     }
 }
@@ -159,6 +168,14 @@ fn test_constructor_sets_storage() {
     assert_eq!(lp_profile, profile.contract_address);
     assert_eq!(lp_core, ekubo_core().contract_address);
     assert_eq!(lp_owner, owner);
+}
+
+#[test]
+#[fork("mainnet")]
+#[should_panic(expected: "Only from liquidity provider")]
+fn test_initialize_pool_fails_if_not_extension() {
+    let (pool_key, _, _, _, _, _, _) = setup();
+    ekubo_core().initialize_pool(pool_key, Zero::zero());
 }
 
 #[test]
@@ -800,4 +817,17 @@ fn test_add_liquidity_fails_if_extension_not_liquidity_provider() {
 fn test_add_liquidity_fails_if_not_initialized() {
     let (pool_key, lp, _, _, _, _, _) = setup();
     lp.add_liquidity(pool_key, 100000000000000000000);
+}
+
+#[test]
+#[fork("mainnet")]
+#[should_panic(expected: "Only from liquidity provider")]
+fn test_update_position_fails_if_not_extension() {
+    let (pool_key, _, _, _, _, _, _) = setup_add_liquidity();
+    let liquidity = 100;
+    let bounds = Bounds {
+        lower: i129 { mag: 100, sign: true }, upper: i129 { mag: 100, sign: false },
+    };
+    // Try to deposit liquidity
+    positions().mint_and_deposit(pool_key, bounds, liquidity);
 }
