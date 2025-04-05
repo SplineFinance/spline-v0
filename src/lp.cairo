@@ -9,11 +9,16 @@ pub trait ILiquidityProvider<TStorage> {
         profile_params: Span<ekubo::types::i129::i129>,
     );
 
-    /// adds an amount of liquidity factor to pool with ekubo key `pool_key`
-    fn add_liquidity(ref self: TStorage, pool_key: ekubo::types::keys::PoolKey, factor: u128);
+    /// adds an amount of liquidity factor to pool with ekubo key `pool_key`, minting shares to
+    /// caller
+    fn add_liquidity(
+        ref self: TStorage, pool_key: ekubo::types::keys::PoolKey, factor: u128,
+    ) -> u256;
 
     /// removes an amount of liquidity factor from pool with ekubo key `pool_key`
-    fn remove_liquidity(ref self: TStorage, pool_key: ekubo::types::keys::PoolKey, factor: u128);
+    fn remove_liquidity(
+        ref self: TStorage, pool_key: ekubo::types::keys::PoolKey, shares: u256,
+    ) -> u128;
 
     /// returns the ekubo core for pools deployed by this liquidity provider
     fn core(ref self: TStorage) -> ekubo::interfaces::core::ICoreDispatcher;
@@ -180,7 +185,7 @@ pub mod LiquidityProvider {
                 .mint(get_contract_address(), initial_liquidity_factor.try_into().unwrap());
         }
 
-        fn add_liquidity(ref self: ContractState, pool_key: PoolKey, factor: u128) {
+        fn add_liquidity(ref self: ContractState, pool_key: PoolKey, factor: u128) -> u256 {
             self.check_pool_key(pool_key);
             self.check_pool_initialized(pool_key);
 
@@ -190,8 +195,7 @@ pub mod LiquidityProvider {
             let total_shares = IERC20Dispatcher { contract_address: pool_token }.total_supply();
 
             let liquidity_factor = self.pool_liquidity_factors.read(pool_key);
-            let shares = self
-                .calculate_shares(total_shares, liquidity_factor_delta, liquidity_factor);
+            let shares = self.calculate_shares(total_shares, factor, liquidity_factor);
 
             // add amount to liquidity factor in storage
             let new_liquidity_factor = liquidity_factor + factor;
@@ -206,19 +210,21 @@ pub mod LiquidityProvider {
 
             // mint pool token shares to caller
             ILiquidityProviderTokenDispatcher { contract_address: pool_token }.mint(caller, shares);
+
+            shares
         }
 
-        fn remove_liquidity(ref self: ContractState, pool_key: PoolKey, factor: u128) {
+        fn remove_liquidity(ref self: ContractState, pool_key: PoolKey, shares: u256) -> u128 {
             self.check_pool_key(pool_key);
             self.check_pool_initialized(pool_key);
 
-            // calculate shares to burn
-            let liquidity_factor_delta = i129 { mag: factor, sign: true };
+            // calculate liquidity factor to remove
             let pool_token = self.pool_tokens.read(pool_key);
             let total_shares = IERC20Dispatcher { contract_address: pool_token }.total_supply();
             let liquidity_factor = self.pool_liquidity_factors.read(pool_key);
-            let shares = self
-                .calculate_shares(total_shares, liquidity_factor_delta, liquidity_factor);
+
+            let factor = self.calculate_factor(liquidity_factor, shares, total_shares);
+            let liquidity_factor_delta = i129 { mag: factor, sign: true };
 
             // remove amount from liquidity factor in storage
             assert(liquidity_factor >= factor, 'Not enough liquidity');
@@ -234,6 +240,8 @@ pub mod LiquidityProvider {
             call_core_with_callback::<
                 (PoolKey, i129, ContractAddress), (),
             >(core, @(pool_key, liquidity_factor_delta, caller));
+
+            factor
         }
 
         fn core(ref self: ContractState) -> ICoreDispatcher {
@@ -332,24 +340,17 @@ pub mod LiquidityProvider {
                 .write(pool_key, (new_reserve_delta.amount0.mag, new_reserve_delta.amount1.mag));
         }
 
-        /// Calculates amount of shares to mint or burn based on liquidity delta and factor
-        /// @dev total_shares, liquidity delta, and factor are values *before* liquidity delta is
-        /// applied
+        /// Calculates amount of shares to mint based on factor and total factor
+        /// @dev total_shares, factor, and total_factor are values *before* delta applied
         fn calculate_shares(
-            self: @ContractState, total_shares: u256, delta: i129, factor: u128,
+            self: @ContractState, total_shares: u256, factor: u128, total_factor: u128,
         ) -> u256 {
-            assert(total_shares > 0, 'Total shares is 0');
-            assert(factor > 0, 'Factor is 0');
-
-            let denom: u256 = if !delta.sign {
-                factor.try_into().unwrap() + delta.mag.try_into().unwrap()
-            } else {
-                factor.try_into().unwrap()
-            };
-            let num: u256 = delta.mag.try_into().unwrap();
-            assert(num <= denom, 'Numerator > denominator');
+            assert(total_factor > 0, 'Total factor is 0');
+            let denom: u256 = total_factor.try_into().unwrap();
+            let num: u256 = factor.try_into().unwrap();
 
             // into felt for muldiv
+            // TODO: verify round down not needed given felt252 div
             let denom_felt252: felt252 = denom.try_into().unwrap();
             let num_felt252: felt252 = num.try_into().unwrap();
             let total_shares_felt252: felt252 = total_shares.try_into().unwrap();
@@ -357,6 +358,26 @@ pub mod LiquidityProvider {
             let shares_felt252 = total_shares_felt252
                 * felt252_div(num_felt252, denom_felt252.try_into().unwrap());
             return shares_felt252.try_into().unwrap();
+        }
+
+        /// Calculates amount of factor to remove based on shares and total shares
+        /// @dev total_factor, shares, and total_shares are values *before* delta applied
+        fn calculate_factor(
+            self: @ContractState, total_factor: u128, shares: u256, total_shares: u256,
+        ) -> u128 {
+            assert(total_shares > 0, 'Total shares is 0');
+            let denom: u256 = total_shares.try_into().unwrap();
+            let num: u256 = shares.try_into().unwrap();
+
+            // into felt for muldiv
+            // TODO: verify round down not needed given felt252 div
+            let denom_felt252: felt252 = denom.try_into().unwrap();
+            let num_felt252: felt252 = num.try_into().unwrap();
+            let total_factor_felt252: felt252 = total_factor.try_into().unwrap();
+
+            let factor_felt252 = total_factor_felt252
+                * felt252_div(num_felt252, denom_felt252.try_into().unwrap());
+            return factor_felt252.try_into().unwrap();
         }
     }
 
