@@ -1,4 +1,4 @@
-/// SymmetricProfile is a profile for deploying concentrated liquidity according to a
+/// SymmetricLiquidityProfile is a profile for deploying concentrated liquidity according to a
 /// symmetric discretized liquidity profile.
 ///
 /// Adds/remove liquidity by working down the full tick range. Partitions the
@@ -14,11 +14,11 @@
 ///
 /// Number of SSTORE calls then grows by log(1/s).
 #[starknet::component]
-pub mod SymmetricProfileComponent {
+pub mod SymmetricLiquidityProfileComponent {
     use ekubo::types::bounds::Bounds;
     use ekubo::types::i129::i129;
     use ekubo::types::keys::PoolKey;
-    use spline_v0::profiles::bounds::IProfileBounds;
+    use spline_v0::profiles::bounds::ILiquidityProfileBounds;
 
     #[storage]
     struct Storage {
@@ -28,10 +28,10 @@ pub mod SymmetricProfileComponent {
         tick_max: i129,
     }
 
-    #[embeddable_as(SymmetricProfile)]
-    pub impl SymmetricProfileImpl<
+    #[embeddable_as(SymmetricLiquidityProfile)]
+    pub impl SymmetricLiquidityProfileImpl<
         TContractState, +HasComponent<TContractState>,
-    > of IProfileBounds<ComponentState<TContractState>> {
+    > of ILiquidityProfileBounds<ComponentState<TContractState>> {
         fn get_bounds_for_liquidity_updates(
             self: @ComponentState<TContractState>, pool_key: PoolKey,
         ) -> Span<Bounds> {

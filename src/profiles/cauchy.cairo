@@ -2,7 +2,7 @@
 /// This contract facilitates mint and burn of fungible liquidity tokens
 /// in pools with Cauchy liquidity profile.
 #[starknet::contract]
-pub mod CauchyProfile {
+pub mod CauchyLiquidityProfile {
     use ekubo::interfaces::core::UpdatePositionParameters;
     use ekubo::types::i129::i129;
     use ekubo::types::keys::PoolKey;
@@ -15,7 +15,7 @@ pub mod CauchyProfile {
     }
 
     #[abi(embed_v0)]
-    pub impl ILiquidityProfileImpl of ILiquidityProfile<ContractState> {
+    pub impl ICauchyLiquidityProfileImpl of ILiquidityProfile<ContractState> {
         fn initial_liquidity_factor(
             ref self: ContractState, pool_key: PoolKey, initial_tick: i129,
         ) -> u128 {
