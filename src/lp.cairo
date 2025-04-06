@@ -121,6 +121,7 @@ pub mod LiquidityProvider {
         }
     }
 
+    // TODO: handle swap fees fungibly with protocol fee rate charged
     #[constructor]
     fn constructor(
         ref self: ContractState,
@@ -133,15 +134,6 @@ pub mod LiquidityProvider {
         self.profile.write(profile);
         self.core.write(core);
         self.pool_token_class_hash.write(pool_token_class_hash);
-
-        // TODO: separate fee harvester escrow so dont have issues with handle_delta?
-        // TODO: where transfer in assumes no balance in this contract
-        // TODO: actually harvest fees might be easy. track fees in storage then lump
-        // TODO: in to liquidity_delta value on update_position taking care with
-        // TODO: shares amount minted/burned and liquidity factor update before mint/burn
-        // TODO: liquidity delta calc from fees should use fees and reserves in x,y as frac
-        // TODO: in sense that liquidity_factor_delta = (fees / reserves) * liquidity_factor
-        // TODO: then add that in to store new liquidity_factor *before* mint/burn shares calc
 
         core
             .set_call_points(

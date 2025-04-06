@@ -5,10 +5,12 @@ use ekubo::interfaces::core::{
     ICoreDispatcher, ICoreDispatcherTrait, IExtension, ILocker, SwapParameters,
     UpdatePositionParameters,
 };
+use ekubo::interfaces::mathlib::{IMathLibDispatcherTrait, dispatcher as mathlib};
 use ekubo::interfaces::positions::{IPositionsDispatcher, IPositionsDispatcherTrait};
-use ekubo::interfaces::router::{IRouterDispatcher, IRouterDispatcherTrait};
+use ekubo::interfaces::router::{IRouterDispatcher, IRouterDispatcherTrait, RouteNode, TokenAmount};
 use ekubo::types::bounds::Bounds;
 use ekubo::types::call_points::CallPoints;
+use ekubo::types::delta::Delta;
 use ekubo::types::i129::i129;
 use ekubo::types::keys::{PoolKey, PositionKey};
 use ekubo::types::pool_price::PoolPrice;
@@ -440,7 +442,6 @@ fn test_create_and_initialize_pool_updates_pool_reserves() {
     assert_eq!(reserves0_after.into(), reserves0.into() + amount0_transferred);
     assert_eq!(reserves1_after.into(), reserves1.into() + amount1_transferred);
 
-    // valid since no swaps have occurred
     assert_eq!(reserves0_after.into(), token0.balance_of(ekubo_core().contract_address));
     assert_eq!(reserves1_after.into(), token1.balance_of(ekubo_core().contract_address));
 }
@@ -799,7 +800,6 @@ fn test_add_liquidity_updates_pool_reserves() {
     assert_eq!(reserves0_after.into(), reserves0.into() + amount0_transferred);
     assert_eq!(reserves1_after.into(), reserves1.into() + amount1_transferred);
 
-    // valid since no swaps have occurred
     assert_eq!(reserves0_after.into(), token0.balance_of(ekubo_core().contract_address));
     assert_eq!(reserves1_after.into(), token1.balance_of(ekubo_core().contract_address));
 }
@@ -1083,7 +1083,6 @@ fn test_remove_liquidity_updates_pool_reserves() {
     assert_eq!(reserves0_after.into(), reserves0_before.into() - amount0_transferred);
     assert_eq!(reserves1_after.into(), reserves1_before.into() - amount1_transferred);
 
-    // valid since no swaps have occurred
     assert_eq!(reserves0_after.into(), token0.balance_of(ekubo_core().contract_address));
     assert_eq!(reserves1_after.into(), token1.balance_of(ekubo_core().contract_address));
 }
@@ -1109,4 +1108,47 @@ fn test_remove_liquidity_fails_if_extension_not_liquidity_provider() {
 fn test_remove_liquidity_fails_if_not_initialized() {
     let (pool_key, lp, _, _, _, _, _) = setup();
     lp.remove_liquidity(pool_key, 100000000000000000000);
+}
+
+#[test]
+#[fork("mainnet")]
+fn test_after_swap_updates_pool_reserves() {
+    let (pool_key, lp, _, _, _, token0, token1) = setup_add_liquidity();
+    let buy_token = IERC20Dispatcher { contract_address: token1.contract_address };
+    buy_token.transfer(router().contract_address, 100000000);
+
+    let (reserves0_before, reserves1_before) = lp.pool_reserves(pool_key);
+    let swap_delta = router()
+        .swap(
+            node: RouteNode {
+                pool_key,
+                sqrt_ratio_limit: mathlib()
+                    .tick_to_sqrt_ratio(i129 { mag: pool_key.tick_spacing, sign: false }),
+                skip_ahead: 0,
+            },
+            token_amount: TokenAmount {
+                token: buy_token.contract_address, amount: i129 { mag: 100000000, sign: false },
+            },
+        );
+    assert_eq!(
+        swap_delta,
+        Delta {
+            amount0: i129 { mag: 99989999, sign: true },
+            amount1: i129 { mag: 100000000, sign: false },
+        },
+    );
+
+    let expected_reserves0: u128 = (i129 { mag: reserves0_before, sign: false }
+        + swap_delta.amount0)
+        .mag;
+    let expected_reserves1: u128 = (i129 { mag: reserves1_before, sign: false }
+        + swap_delta.amount1)
+        .mag;
+    let (reserves0_after, reserves1_after) = lp.pool_reserves(pool_key);
+    assert_eq!(reserves0_after, expected_reserves0);
+    assert_eq!(reserves1_after, expected_reserves1);
+
+    // valid since swap delta seems to include fees
+    assert_eq!(reserves0_after.into(), token0.balance_of(ekubo_core().contract_address));
+    assert_eq!(reserves1_after.into(), token1.balance_of(ekubo_core().contract_address));
 }
