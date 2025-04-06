@@ -1,10 +1,7 @@
 use core::num::traits::Zero;
 use ekubo::components::owned::{IOwnedDispatcher, IOwnedDispatcherTrait};
 use ekubo::components::util::serialize;
-use ekubo::interfaces::core::{
-    ICoreDispatcher, ICoreDispatcherTrait, IExtension, ILocker, SwapParameters,
-    UpdatePositionParameters,
-};
+use ekubo::interfaces::core::{ICoreDispatcher, ICoreDispatcherTrait, UpdatePositionParameters};
 use ekubo::interfaces::mathlib::{IMathLibDispatcherTrait, dispatcher as mathlib};
 use ekubo::interfaces::positions::{IPositionsDispatcher, IPositionsDispatcherTrait};
 use ekubo::interfaces::router::{IRouterDispatcher, IRouterDispatcherTrait, RouteNode, TokenAmount};
