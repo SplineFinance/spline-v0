@@ -357,9 +357,9 @@ fn test_create_and_initialize_pool_transfers_funds_to_pool() {
 
     // sweep and check that no dust left
     ISweepableDispatcher { contract_address: lp.contract_address }
-        .sweep(token0.contract_address, get_contract_address());
+        .sweep(token0.contract_address, get_contract_address(), 0);
     ISweepableDispatcher { contract_address: lp.contract_address }
-        .sweep(token1.contract_address, get_contract_address());
+        .sweep(token1.contract_address, get_contract_address(), 0);
     assert_eq!(token0.balance_of(lp.contract_address), 0);
     assert_eq!(token1.balance_of(lp.contract_address), 0);
 }
@@ -507,9 +507,9 @@ fn setup_add_liquidity() -> (
     assert_eq!(token1.balance_of(lp.contract_address), initial_amount.into());
     lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
     ISweepableDispatcher { contract_address: lp.contract_address }
-        .sweep(token0.contract_address, get_contract_address());
+        .sweep(token0.contract_address, get_contract_address(), 0);
     ISweepableDispatcher { contract_address: lp.contract_address }
-        .sweep(token1.contract_address, get_contract_address());
+        .sweep(token1.contract_address, get_contract_address(), 0);
     (pool_key, lp, owner, profile, default_profile_params, token0, token1)
 }
 
@@ -759,9 +759,9 @@ fn test_add_liquidity_transfers_funds_to_pool() {
 
     // sweep and check that no dust left
     ISweepableDispatcher { contract_address: lp.contract_address }
-        .sweep(token0.contract_address, get_contract_address());
+        .sweep(token0.contract_address, get_contract_address(), 0);
     ISweepableDispatcher { contract_address: lp.contract_address }
-        .sweep(token1.contract_address, get_contract_address());
+        .sweep(token1.contract_address, get_contract_address(), 0);
     assert_eq!(token0.balance_of(lp.contract_address), 0);
     assert_eq!(token1.balance_of(lp.contract_address), 0);
 }

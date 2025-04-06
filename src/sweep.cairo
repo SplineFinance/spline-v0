@@ -4,6 +4,7 @@ pub trait ISweepable<TContractState> {
         self: @TContractState,
         token: starknet::ContractAddress,
         recipient: starknet::ContractAddress,
+        amount_min: u256,
     );
 }
 
@@ -27,9 +28,11 @@ pub mod SweepableComponent {
             self: @ComponentState<TContractState>,
             token: ContractAddress,
             recipient: ContractAddress,
+            amount_min: u256,
         ) {
             let balance = IERC20Dispatcher { contract_address: token }
                 .balance_of(get_contract_address());
+            assert(balance >= amount_min, 'Insufficient balance');
             IERC20Dispatcher { contract_address: token }.transfer(recipient, balance);
         }
     }

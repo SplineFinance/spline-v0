@@ -36,11 +36,22 @@ fn setup() -> (ISweepableDispatcher, IERC20Dispatcher) {
     (ISweepableDispatcher { contract_address: sweepable }, token)
 }
 
+#[test]
 fn test_sweep() {
     let (sweepable, token) = setup();
     let recipient = get_contract_address();
     assert_eq!(token.balance_of(recipient), 0);
     assert_eq!(token.balance_of(sweepable.contract_address), 1000000000000000000);
-    sweepable.sweep(token.contract_address, recipient);
+    sweepable.sweep(token.contract_address, recipient, 1000000000000000000);
     assert_eq!(token.balance_of(recipient), 1000000000000000000);
+}
+
+#[test]
+#[should_panic(expected: 'Insufficient balance')]
+fn test_sweep_insufficient_balance() {
+    let (sweepable, token) = setup();
+    let recipient = get_contract_address();
+    assert_eq!(token.balance_of(recipient), 0);
+    assert_eq!(token.balance_of(sweepable.contract_address), 1000000000000000000);
+    sweepable.sweep(token.contract_address, recipient, 1000000000000000001);
 }
