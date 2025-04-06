@@ -1087,3 +1087,26 @@ fn test_remove_liquidity_updates_pool_reserves() {
     assert_eq!(reserves0_after.into(), token0.balance_of(ekubo_core().contract_address));
     assert_eq!(reserves1_after.into(), token1.balance_of(ekubo_core().contract_address));
 }
+
+#[test]
+#[fork("mainnet")]
+#[should_panic(expected: ('Extension not this contract',))]
+fn test_remove_liquidity_fails_if_extension_not_liquidity_provider() {
+    let (_, lp, _, _, _, token0, token1) = setup_remove_liquidity();
+    let pool_key = PoolKey {
+        token0: token0.contract_address,
+        token1: token1.contract_address,
+        fee: 34028236692093846346337460743176821, // 1 bps (= 2**128 / 10000)
+        tick_spacing: 1, // 0.01 bps
+        extension: Zero::<ContractAddress>::zero(),
+    };
+    lp.remove_liquidity(pool_key, 100000000000000000000);
+}
+
+#[test]
+#[fork("mainnet")]
+#[should_panic(expected: ('Pool token not deployed',))]
+fn test_remove_liquidity_fails_if_not_initialized() {
+    let (pool_key, lp, _, _, _, _, _) = setup();
+    lp.remove_liquidity(pool_key, 100000000000000000000);
+}
