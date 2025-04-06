@@ -140,7 +140,7 @@ pub mod LiquidityProvider {
                 CallPoints {
                     before_initialize_pool: true,
                     after_initialize_pool: false,
-                    before_swap: false, // TODO: set to true with fee harvesting
+                    before_swap: false,
                     after_swap: true,
                     before_update_position: true,
                     after_update_position: false,
