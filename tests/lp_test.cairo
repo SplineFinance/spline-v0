@@ -439,6 +439,10 @@ fn test_create_and_initialize_pool_updates_pool_reserves() {
     let (reserves0_after, reserves1_after) = lp.pool_reserves(pool_key);
     assert_eq!(reserves0_after.into(), reserves0.into() + amount0_transferred);
     assert_eq!(reserves1_after.into(), reserves1.into() + amount1_transferred);
+
+    // valid since no swaps have occurred
+    assert_eq!(reserves0_after.into(), token0.balance_of(ekubo_core().contract_address));
+    assert_eq!(reserves1_after.into(), token1.balance_of(ekubo_core().contract_address));
 }
 
 #[test]
@@ -794,6 +798,10 @@ fn test_add_liquidity_updates_pool_reserves() {
     let (reserves0_after, reserves1_after) = lp.pool_reserves(pool_key);
     assert_eq!(reserves0_after.into(), reserves0.into() + amount0_transferred);
     assert_eq!(reserves1_after.into(), reserves1.into() + amount1_transferred);
+
+    // valid since no swaps have occurred
+    assert_eq!(reserves0_after.into(), token0.balance_of(ekubo_core().contract_address));
+    assert_eq!(reserves1_after.into(), token1.balance_of(ekubo_core().contract_address));
 }
 
 #[test]
@@ -830,4 +838,252 @@ fn test_update_position_fails_if_not_extension() {
     };
     // Try to deposit liquidity
     positions().mint_and_deposit(pool_key, bounds, liquidity);
+}
+
+fn setup_remove_liquidity() -> (
+    PoolKey,
+    ILiquidityProviderDispatcher,
+    ContractAddress,
+    ILiquidityProfileDispatcher,
+    Span<i129>,
+    IERC20Dispatcher,
+    IERC20Dispatcher,
+) {
+    let (pool_key, lp, owner, profile, default_profile_params, token0, token1) =
+        setup_add_liquidity();
+    let step = *default_profile_params[2];
+    let n = *default_profile_params[3];
+    let factor = 100000000000000000000; // 100 * 1e18
+    let amount: u128 = (step.mag * n.mag * (factor)) / (1900000);
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+    lp.add_liquidity(pool_key, factor);
+    (pool_key, lp, owner, profile, default_profile_params, token0, token1)
+}
+
+#[test]
+#[fork("mainnet")]
+fn test_remove_liquidity_updates_liquidity_factor() {
+    let (pool_key, lp, _, _, _, _, _) = setup_remove_liquidity();
+    let shares = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
+        .balance_of(get_contract_address());
+    let shares_removed = shares / 4;
+
+    let liquidity_factor_before: u128 = lp.pool_liquidity_factor(pool_key);
+    let liquidity_factor_removed: u128 = 25000000000000000000;
+    assert_eq!(lp.remove_liquidity(pool_key, shares_removed), liquidity_factor_removed);
+    assert_eq!(
+        lp.pool_liquidity_factor(pool_key), liquidity_factor_before - liquidity_factor_removed,
+    );
+}
+
+#[test]
+#[fork("mainnet")]
+fn test_remove_liquidity_burns_shares() {
+    let (pool_key, lp, _, _, _, _, _) = setup_remove_liquidity();
+    let shares = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
+        .balance_of(get_contract_address());
+    let shares_removed = shares / 4;
+
+    let total_supply_before = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
+        .total_supply();
+    lp.remove_liquidity(pool_key, shares_removed);
+
+    let total_supply_after = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
+        .total_supply();
+    let shares_after = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
+        .balance_of(get_contract_address());
+    assert_eq!(total_supply_after, total_supply_before - shares_removed);
+    assert_eq!(shares_after, shares - shares_removed);
+}
+
+#[test]
+#[fork("mainnet")]
+fn test_remove_liquidity_removes_liquidity_from_pool() {
+    let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup_remove_liquidity();
+    let initial_tick = i129 { mag: 0, sign: false };
+    let shares = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
+        .balance_of(get_contract_address());
+    let shares_removed = shares / 4;
+
+    let initial_liquidity_factor = *default_profile_params[0];
+    let factor = 100000000000000000000; // 100 * 1e18
+    let liquidity_factor_before: i129 = i129 { mag: factor, sign: false }
+        + initial_liquidity_factor;
+    let step = *default_profile_params[2];
+    let n = *default_profile_params[3];
+    assert_eq!(n.mag, 4);
+    let liquidity_updates_before: Span<UpdatePositionParameters> = array![
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 1, sign: false } * step,
+                upper: initial_tick + i129 { mag: 1, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor_before / i129 { mag: 1, sign: false },
+        },
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 2, sign: false } * step,
+                upper: initial_tick + i129 { mag: 2, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor_before / i129 { mag: 2, sign: false },
+        },
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 3, sign: false } * step,
+                upper: initial_tick + i129 { mag: 3, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor_before / i129 { mag: 3, sign: false },
+        },
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 4, sign: false } * step,
+                upper: initial_tick + i129 { mag: 4, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor_before / i129 { mag: 4, sign: false },
+        },
+    ]
+        .span();
+
+    let factor_removed: u128 = 25000000000000000000;
+    let liquidity_factor_removed: i129 = i129 { mag: factor_removed, sign: false };
+    let liquidity_updates: Span<UpdatePositionParameters> = array![
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 1, sign: false } * step,
+                upper: initial_tick + i129 { mag: 1, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor_removed / i129 { mag: 1, sign: true },
+        },
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 2, sign: false } * step,
+                upper: initial_tick + i129 { mag: 2, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor_removed / i129 { mag: 2, sign: true },
+        },
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 3, sign: false } * step,
+                upper: initial_tick + i129 { mag: 3, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor_removed / i129 { mag: 3, sign: true },
+        },
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 4, sign: false } * step,
+                upper: initial_tick + i129 { mag: 4, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor_removed / i129 { mag: 4, sign: true },
+        },
+    ]
+        .span();
+
+    // check initial liquidity at expected profile ticks
+    let core = ekubo_core();
+    for update in liquidity_updates_before {
+        let position_key = PositionKey {
+            salt: 0, owner: lp.contract_address, bounds: *update.bounds,
+        };
+        let position = core.get_position(pool_key, position_key);
+        assert_eq!(position.liquidity, *update.liquidity_delta.mag);
+    }
+
+    // now remove the liquidity
+    lp.remove_liquidity(pool_key, shares_removed);
+
+    // TODO: check why provider getter not working as expected in test (but works in contract)
+
+    // check liquidity at expected profile ticks according to test profile
+    let mut j = 0;
+    for update in liquidity_updates {
+        let position_key = PositionKey {
+            salt: 0, owner: lp.contract_address, bounds: *update.bounds,
+        };
+        let position = core.get_position(pool_key, position_key);
+        assert_eq!(
+            position.liquidity,
+            *liquidity_updates_before[j].liquidity_delta.mag - *update.liquidity_delta.mag,
+        ); // should remove liq from initial amount
+        assert!(*update.liquidity_delta.sign, "Liquidity delta should be negative");
+        assert!(*update.liquidity_delta.mag > 0, "Liquidity delta should be > 0");
+        j += 1;
+    }
+}
+
+#[test]
+#[fork("mainnet")]
+fn test_remove_liquidity_transfers_funds_from_pool() {
+    let (pool_key, lp, _, _, _, token0, token1) = setup_remove_liquidity();
+    let shares = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
+        .balance_of(get_contract_address());
+    let shares_removed = shares / 4;
+
+    let core = ekubo_core();
+    let (ekubo_balance0_before, ekubo_balance1_before) = (
+        token0.balance_of(core.contract_address), token1.balance_of(core.contract_address),
+    );
+    let (user_balance0_before, user_balance1_before) = (
+        token0.balance_of(get_contract_address()), token1.balance_of(get_contract_address()),
+    );
+
+    lp.remove_liquidity(pool_key, shares_removed);
+
+    let (ekubo_balance0_after, ekubo_balance1_after) = (
+        token0.balance_of(core.contract_address), token1.balance_of(core.contract_address),
+    );
+    let (user_balance0_after, user_balance1_after) = (
+        token0.balance_of(get_contract_address()), token1.balance_of(get_contract_address()),
+    );
+
+    assert_lt!(ekubo_balance0_after, ekubo_balance0_before);
+    assert_lt!(ekubo_balance1_after, ekubo_balance1_before);
+    assert_gt!(user_balance0_after, user_balance0_before);
+    assert_gt!(user_balance1_after, user_balance1_before);
+
+    let amount0_transferred: u256 = ekubo_balance0_before - ekubo_balance0_after;
+    let amount1_transferred: u256 = ekubo_balance1_before - ekubo_balance1_after;
+
+    assert_eq!(user_balance0_after, user_balance0_before + amount0_transferred);
+    assert_eq!(user_balance1_after, user_balance1_before + amount1_transferred);
+}
+
+#[test]
+#[fork("mainnet")]
+fn test_remove_liquidity_updates_pool_reserves() {
+    let (pool_key, lp, _, _, _, token0, token1) = setup_remove_liquidity();
+    let shares = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
+        .balance_of(get_contract_address());
+    let shares_removed = shares / 4;
+
+    let core = ekubo_core();
+    let (ekubo_balance0_before, ekubo_balance1_before) = (
+        token0.balance_of(core.contract_address), token1.balance_of(core.contract_address),
+    );
+    let (reserves0_before, reserves1_before) = lp.pool_reserves(pool_key);
+
+    lp.remove_liquidity(pool_key, shares_removed);
+
+    let (ekubo_balance0_after, ekubo_balance1_after) = (
+        token0.balance_of(core.contract_address), token1.balance_of(core.contract_address),
+    );
+
+    let amount0_transferred: u256 = ekubo_balance0_before - ekubo_balance0_after;
+    let amount1_transferred: u256 = ekubo_balance1_before - ekubo_balance1_after;
+
+    let (reserves0_after, reserves1_after) = lp.pool_reserves(pool_key);
+    assert_eq!(reserves0_after.into(), reserves0_before.into() - amount0_transferred);
+    assert_eq!(reserves1_after.into(), reserves1_before.into() - amount1_transferred);
+
+    // valid since no swaps have occurred
+    assert_eq!(reserves0_after.into(), token0.balance_of(ekubo_core().contract_address));
+    assert_eq!(reserves1_after.into(), token1.balance_of(ekubo_core().contract_address));
 }
