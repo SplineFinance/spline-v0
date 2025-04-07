@@ -19,11 +19,12 @@ pub mod SymmetricLiquidityProfileComponent {
     use ekubo::types::i129::i129;
     use ekubo::types::keys::PoolKey;
     use spline_v0::profiles::bounds::ILiquidityProfileBounds;
-    use starknet::storage::{Map, StorageMapReadAccess};
+    use starknet::get_caller_address;
+    use starknet::storage::{Map, StorageMapReadAccess, StorageMapWriteAccess};
 
     #[storage]
     pub struct Storage {
-        grid: Map<PoolKey, (u128, u128, i129, i129)> // s, resolution, tick_start, tick_max
+        grid: Map<PoolKey, (u128, u128, i129, i129)> // s, res, tick_start, tick_max
     }
 
     #[embeddable_as(SymmetricLiquidityProfile)]
@@ -34,19 +35,12 @@ pub mod SymmetricLiquidityProfileComponent {
             self: @ComponentState<TContractState>, pool_key: PoolKey,
         ) -> Span<Bounds> {
             let (s, res, tick_start, tick_max) = self.grid.read(pool_key);
-            assert((res > 0 && (res % 2 == 0)), 'resolution must be power of 2');
-
-            assert(tick_start < tick_max, 'tick_start must be < tick_max');
-            assert(s > 0 && (s % pool_key.tick_spacing == 0), 's must divide by tick_spacing');
-
             let mut ticks: Bounds = Bounds { lower: tick_start, upper: tick_start };
             let mut bounds = array![];
 
             let mut seg: i129 = i129 { mag: 2 * s, sign: false };
             let mut next: Bounds = Bounds { lower: tick_start - seg, upper: tick_start + seg };
-
             let mut step: i129 = i129 { mag: (2 * s) / res, sign: false };
-            assert(step.mag != 0, 'step must be non-zero');
 
             let mut i: u256 = 0;
             while ticks.upper != tick_max {
@@ -71,6 +65,30 @@ pub mod SymmetricLiquidityProfileComponent {
             }
 
             bounds.span()
+        }
+    }
+
+    #[generate_trait]
+    pub impl SymmetricLiquidityProfileInternalImpl<
+        TContractState, +HasComponent<TContractState>,
+    > of InternalTrait<TContractState> {
+        fn _set_grid_for_bounds(
+            ref self: ComponentState<TContractState>, pool_key: PoolKey, params: Span<i129>,
+        ) {
+            assert(params.len() == 4, 'Invalid params length');
+            assert(!*params[0].sign, 'Invalid grid s');
+            assert(!*params[1].sign, 'Invalid grid resolution');
+
+            let (s, res, tick_start, tick_max) = (
+                *params[0].mag, *params[1].mag, *params[2], *params[3],
+            );
+
+            assert((res > 0 && (res % 2 == 0)), 'resolution must be power of 2');
+            assert(tick_start < tick_max, 'tick_start must be < tick_max');
+            assert(s > 0 && (s % pool_key.tick_spacing == 0), 's must divide by tick_spacing');
+            assert((2 * s) / res != 0, 'step must be non-zero');
+
+            self.grid.write(pool_key, (s, res, tick_start, tick_max));
         }
     }
 }

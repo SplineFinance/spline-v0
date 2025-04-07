@@ -9,7 +9,6 @@ pub mod CauchyLiquidityProfile {
     use ekubo::types::i129::i129;
     use ekubo::types::keys::PoolKey;
     use spline_v0::profile::ILiquidityProfile;
-    use spline_v0::profiles::bounds::ILiquidityProfileBounds;
     use spline_v0::profiles::symmetric::SymmetricLiquidityProfileComponent;
     use starknet::get_caller_address;
     use starknet::storage::{Map, StorageMapReadAccess, StorageMapWriteAccess};
@@ -23,12 +22,14 @@ pub mod CauchyLiquidityProfile {
     #[abi(embed_v0)]
     impl SymmetricLiquidityProfileImpl =
         SymmetricLiquidityProfileComponent::SymmetricLiquidityProfile<ContractState>;
+    impl SymmetricLiquidityProfileInternalImpl =
+        SymmetricLiquidityProfileComponent::SymmetricLiquidityProfileInternalImpl<ContractState>;
 
     #[storage]
     struct Storage {
         params: Map<PoolKey, (u128, i129, u64, i129)>, // l0, mu, gamma, rho
         #[substorage(v0)]
-        symmetric: SymmetricLiquidityProfileComponent::Storage,
+        symmetric: SymmetricLiquidityProfileComponent::Storage // s, resolution, tick_start, tick_max
     }
 
     #[event]
@@ -53,14 +54,17 @@ pub mod CauchyLiquidityProfile {
 
         fn set_liquidity_profile(ref self: ContractState, pool_key: PoolKey, params: Span<i129>) {
             assert(pool_key.extension == get_caller_address(), 'Not extension');
-            assert(params.len() == 4, 'Invalid params length');
-            assert(!*params[0].sign, 'Invalid liquidity factor sign');
-            assert(!*params[2].sign, 'Invalid gamma sign');
+            assert(params.len() == 8, 'Invalid params length');
 
-            let l0: u128 = *params[0].mag;
-            let mu: i129 = *params[1];
-            let gamma: u64 = (*params[2].mag).try_into().unwrap();
-            let rho: i129 = *params[3];
+            // first 4 params are for symmetric
+            self.symmetric._set_grid_for_bounds(pool_key, params.slice(0, 4));
+
+            // last 4 params are for cauchy
+            assert(!*params[4].sign, 'Invalid params l0 sign');
+            assert(!*params[6].sign, 'Invalid params gamma sign');
+            let (l0, mu, gamma, rho) = (
+                *params[4].mag, *params[5], (*params[6].mag).try_into().unwrap(), *params[7],
+            );
             self.params.write(pool_key, (l0, mu, gamma, rho));
         }
 

@@ -9,4 +9,5 @@ pub mod profiles {
     pub mod bounds;
     pub mod cauchy;
     pub mod symmetric;
+    pub mod test_symmetric;
 }
