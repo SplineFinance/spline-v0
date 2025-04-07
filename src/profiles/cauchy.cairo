@@ -6,6 +6,7 @@ pub mod CauchyLiquidityProfile {
     use core::felt252_div;
     use core::num::traits::Zero;
     use ekubo::interfaces::core::UpdatePositionParameters;
+    use ekubo::types::bounds::Bounds;
     use ekubo::types::i129::i129;
     use ekubo::types::keys::PoolKey;
     use spline_v0::profile::ILiquidityProfile;
@@ -18,6 +19,15 @@ pub mod CauchyLiquidityProfile {
         storage: symmetric,
         event: SymmetricLiquidityProfileEvent,
     );
+
+    //https://en.wikipedia.org/wiki/Approximations_of_π#:~:text=Depending%20on%20the%20purpose%20of,8·10%E2%88%928).
+    const PI_NUM_FELT252: felt252 = 355;
+    const PI_DENOM_FELT252: felt252 = 113;
+
+    // TODO: fill in for actual ekubo values and not just uni v3 values * 100 (since ekubo ticks are
+    // 0.01 bps)
+    const MIN_TICK: i129 = i129 { mag: 88727200, sign: true };
+    const MAX_TICK: i129 = i129 { mag: 88727200, sign: false };
 
     #[abi(embed_v0)]
     impl SymmetricLiquidityProfileImpl =
@@ -77,11 +87,66 @@ pub mod CauchyLiquidityProfile {
             array![l0_i129, mu_i129, gamma_i129, rho_i129].span()
         }
 
-        fn get_liquidity_at_tick(
-            ref self: ContractState, pool_key: PoolKey, liquidity_factor: i129, tick: i129,
-        ) -> i129 {
-            let (_, mu, gamma, _) = self.params.read(pool_key);
+        fn get_liquidity_updates(
+            ref self: ContractState, pool_key: PoolKey, liquidity_factor: i129,
+        ) -> Span<UpdatePositionParameters> {
+            let bounds = self.symmetric.get_bounds_for_liquidity_updates(pool_key);
+            let n = bounds.len();
 
+            // full range constant base liquidity, defined by tick = rho on cauchy liquidity
+            // distribution
+            let (_, mu, gamma, rho) = self.params.read(pool_key);
+            let lower_fr: i129 = MIN_TICK
+                + i129 { mag: MIN_TICK.mag % pool_key.tick_spacing, sign: false };
+            let upper_fr: i129 = MAX_TICK
+                - i129 { mag: MAX_TICK.mag % pool_key.tick_spacing, sign: false };
+            let mut updates = array![
+                UpdatePositionParameters {
+                    salt: 0,
+                    bounds: Bounds { lower: lower_fr, upper: upper_fr },
+                    liquidity_delta: self
+                        ._get_liquidity_at_tick(
+                            pool_key,
+                            liquidity_factor,
+                            mu,
+                            gamma,
+                            i129 { mag: rho.try_into().unwrap(), sign: false },
+                        ),
+                },
+            ];
+
+            // go from furthest tick out to nearest to center for non-constant cauchy profile
+            let mut cumulative: i129 = Zero::<i129>::zero();
+            for i in n..0 {
+                let bound = bounds[i];
+                // @dev use upper bound on positive tick side so discretization <= continuous curve
+                // at all points
+                let l: i129 = self
+                    ._get_liquidity_at_tick(pool_key, liquidity_factor, mu, gamma, *bound.upper);
+                updates
+                    .append(
+                        UpdatePositionParameters {
+                            salt: 0, bounds: *bound, liquidity_delta: l - cumulative,
+                        },
+                    );
+                cumulative += l;
+            }
+            updates.span()
+        }
+    }
+
+    #[generate_trait]
+    impl InternalMethods of InternalMethodsTrait {
+        // Returns Cauchy distribution liquidity profile:
+        // l(l0, gamma, tick) = (l0 / (pi * gamma)) * (1 / (1 + ((tick - mu) / gamma)^2))
+        fn _get_liquidity_at_tick(
+            ref self: ContractState,
+            pool_key: PoolKey,
+            liquidity_factor: i129,
+            mu: i129,
+            gamma: u64,
+            tick: i129,
+        ) -> i129 {
             // felt252 has max value of 2^{251} + 17 * 2^{192} + 1 or ~2**224
             let gamma_u256: u256 = gamma.try_into().unwrap();
             let shifted_tick_mag_256: u256 = (tick - mu).mag.try_into().unwrap();
@@ -99,32 +164,12 @@ pub mod CauchyLiquidityProfile {
                 .try_into()
                 .unwrap();
 
-            i129 { mag: l, sign: liquidity_factor.sign }
-        }
-
-        fn get_liquidity_updates(
-            ref self: ContractState, pool_key: PoolKey, liquidity_factor: i129,
-        ) -> Span<UpdatePositionParameters> {
-            let bounds = self.symmetric.get_bounds_for_liquidity_updates(pool_key);
-            let n = bounds.len();
-
-            // go from furthest tick out to nearest to center
-            let mut updates = array![];
-            let mut cumulative: i129 = Zero::<i129>::zero();
-            for i in n..0 {
-                let bound = bounds[i];
-                // @dev use upper bound on positive tick side so discretization <= continuous curve
-                // at all points
-                let l = self.get_liquidity_at_tick(pool_key, liquidity_factor, *bound.upper);
-                updates
-                    .append(
-                        UpdatePositionParameters {
-                            salt: 0, bounds: *bound, liquidity_delta: l - cumulative,
-                        },
-                    );
-                cumulative += l;
-            }
-            updates.span()
+            let pi_felt252_div = felt252_div(PI_NUM_FELT252, PI_DENOM_FELT252.try_into().unwrap());
+            let l_felt252: felt252 = l.try_into().unwrap();
+            let l_scaled: felt252 = felt252_div(
+                l_felt252, (pi_felt252_div * gamma_u256.try_into().unwrap()).try_into().unwrap(),
+            );
+            i129 { mag: l_scaled.try_into().unwrap(), sign: liquidity_factor.sign }
         }
     }
 }
