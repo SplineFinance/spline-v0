@@ -25,7 +25,7 @@ pub mod CauchyLiquidityProfile {
 
     #[storage]
     struct Storage {
-        params: Map<PoolKey, (i129, i129, i129, i129)>, // l0, mu, gamma, rho
+        params: Map<PoolKey, (u128, i129, u64, i129)>, // l0, mu, gamma, rho
         #[substorage(v0)]
         symmetric: SymmetricLiquidityProfileComponent::Storage,
     }
@@ -42,28 +42,47 @@ pub mod CauchyLiquidityProfile {
         fn initial_liquidity_factor(
             ref self: ContractState, pool_key: PoolKey, initial_tick: i129,
         ) -> u128 {
-            0
+            let (l0, _, _, _) = self.params.read(pool_key);
+            l0
         }
 
         fn description(ref self: ContractState) -> (ByteArray, ByteArray) {
             ("Cauchy", "CAUCHY")
         }
 
-        fn set_liquidity_profile(ref self: ContractState, pool_key: PoolKey, params: Span<i129>) {}
+        fn set_liquidity_profile(ref self: ContractState, pool_key: PoolKey, params: Span<i129>) {
+            assert(params.len() == 4, 'Invalid params length');
+            assert(!*params[0].sign, 'Invalid liquidity factor sign');
+            assert(!*params[2].sign, 'Invalid gamma sign');
+
+            let l0: u128 = *params[0].mag;
+            let mu: i129 = *params[1];
+            let gamma: u64 = (*params[2].mag).try_into().unwrap();
+            let rho: i129 = *params[3];
+            self.params.write(pool_key, (l0, mu, gamma, rho));
+        }
 
         fn get_liquidity_profile(ref self: ContractState, pool_key: PoolKey) -> Span<i129> {
-            array![].span()
+            let (l0, mu, gamma, rho) = self.params.read(pool_key);
+            let l0_i129: i129 = i129 { mag: l0, sign: false };
+            let mu_i129: i129 = mu;
+            let gamma_i129: i129 = i129 { mag: gamma.try_into().unwrap(), sign: false };
+            let rho_i129: i129 = rho;
+            array![l0_i129, mu_i129, gamma_i129, rho_i129].span()
         }
 
         fn get_liquidity_at_tick(
             ref self: ContractState, pool_key: PoolKey, liquidity_factor: i129, tick: i129,
         ) -> i129 {
             let (_, mu, gamma, _) = self.params.read(pool_key);
-            let denom: u256 = gamma.mag.try_into().unwrap() * gamma.mag.try_into().unwrap()
-                + (tick - mu).mag.try_into().unwrap() * (tick - mu).mag.try_into().unwrap();
-            let num: u256 = gamma.mag.try_into().unwrap() * gamma.mag.try_into().unwrap();
 
-            // TODO: check whether felt252 can overflow given from u256. if so just do a require
+            // felt252 has max value of 2^{251} + 17 * 2^{192} + 1 or ~2**224
+            let gamma_u256: u256 = gamma.try_into().unwrap();
+            let shifted_tick_mag_256: u256 = (tick - mu).mag.try_into().unwrap();
+
+            let denom: u256 = gamma_u256 * gamma_u256 + shifted_tick_mag_256 * shifted_tick_mag_256;
+            let num: u256 = gamma_u256 * gamma_u256;
+
             let denom_felt252: felt252 = denom.try_into().unwrap();
             let num_felt252: felt252 = num.try_into().unwrap();
 
@@ -71,6 +90,7 @@ pub mod CauchyLiquidityProfile {
                 * felt252_div(num_felt252, denom_felt252.try_into().unwrap()))
                 .try_into()
                 .unwrap();
+
             i129 { mag: l, sign: liquidity_factor.sign }
         }
 
@@ -85,6 +105,8 @@ pub mod CauchyLiquidityProfile {
             let mut cumulative: i129 = Zero::<i129>::zero();
             for i in n..0 {
                 let bound = bounds[i];
+                // @dev use upper bound on positive tick side so discretization <= continuous curve
+                // at all points
                 let l = self.get_liquidity_at_tick(pool_key, liquidity_factor, *bound.upper);
                 updates
                     .append(
