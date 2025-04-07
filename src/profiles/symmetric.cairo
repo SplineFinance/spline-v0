@@ -22,7 +22,7 @@ pub mod SymmetricLiquidityProfileComponent {
     use starknet::storage::StoragePointerReadAccess;
 
     #[storage]
-    struct Storage {
+    pub struct Storage {
         s: u128,
         resolution: u128, // 2**r
         tick_start: u128, // center of distribution

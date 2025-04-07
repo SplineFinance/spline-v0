@@ -38,6 +38,19 @@ pub mod TestProfile {
             array![lf, initial_tick, step, n].span()
         }
 
+        fn get_liquidity_at_tick(
+            ref self: ContractState, pool_key: PoolKey, liquidity_factor: i129, tick: i129,
+        ) -> i129 {
+            let updates = self.get_liquidity_updates(pool_key, liquidity_factor);
+            let mut l = 0;
+            for update in updates {
+                if *update.bounds.lower <= tick && tick <= *update.bounds.upper {
+                    l += *update.liquidity_delta.mag;
+                }
+            }
+            i129 { mag: l, sign: liquidity_factor.sign }
+        }
+
         fn get_liquidity_updates(
             ref self: ContractState, pool_key: PoolKey, liquidity_factor: i129,
         ) -> Span<UpdatePositionParameters> {

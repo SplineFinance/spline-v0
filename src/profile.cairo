@@ -24,6 +24,14 @@ pub trait ILiquidityProfile<TStorage> {
         ref self: TStorage, pool_key: ekubo::types::keys::PoolKey,
     ) -> Span<ekubo::types::i129::i129>;
 
+    // Returns the liquidity at a given tick
+    fn get_liquidity_at_tick(
+        ref self: TStorage,
+        pool_key: ekubo::types::keys::PoolKey,
+        liquidity_factor: ekubo::types::i129::i129,
+        tick: ekubo::types::i129::i129,
+    ) -> ekubo::types::i129::i129;
+
     // Returns the liquidity updates to add/remove liquidity
     fn get_liquidity_updates(
         ref self: TStorage,
