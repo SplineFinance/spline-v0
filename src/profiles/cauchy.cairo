@@ -11,6 +11,7 @@ pub mod CauchyLiquidityProfile {
     use spline_v0::profile::ILiquidityProfile;
     use spline_v0::profiles::bounds::ILiquidityProfileBounds;
     use spline_v0::profiles::symmetric::SymmetricLiquidityProfileComponent;
+    use starknet::get_caller_address;
     use starknet::storage::{Map, StorageMapReadAccess, StorageMapWriteAccess};
 
     component!(
@@ -51,6 +52,7 @@ pub mod CauchyLiquidityProfile {
         }
 
         fn set_liquidity_profile(ref self: ContractState, pool_key: PoolKey, params: Span<i129>) {
+            assert(pool_key.extension == get_caller_address(), 'Not extension');
             assert(params.len() == 4, 'Invalid params length');
             assert(!*params[0].sign, 'Invalid liquidity factor sign');
             assert(!*params[2].sign, 'Invalid gamma sign');
@@ -80,6 +82,8 @@ pub mod CauchyLiquidityProfile {
             let gamma_u256: u256 = gamma.try_into().unwrap();
             let shifted_tick_mag_256: u256 = (tick - mu).mag.try_into().unwrap();
 
+            // TODO: check max tick so does not overflow (100x uni v3/v4 max_tick given ticks in
+            // 0.01 bps? univ3/v4 tick_max fits in int24)
             let denom: u256 = gamma_u256 * gamma_u256 + shifted_tick_mag_256 * shifted_tick_mag_256;
             let num: u256 = gamma_u256 * gamma_u256;
 
