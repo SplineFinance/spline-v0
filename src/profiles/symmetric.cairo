@@ -18,7 +18,6 @@ pub mod SymmetricLiquidityProfileComponent {
     use ekubo::types::bounds::Bounds;
     use ekubo::types::i129::i129;
     use ekubo::types::keys::PoolKey;
-    use spline_v0::profile::ILiquidityProfile;
     use spline_v0::profiles::bounds::ILiquidityProfileBounds;
     use starknet::storage::StoragePointerReadAccess;
 
@@ -32,9 +31,7 @@ pub mod SymmetricLiquidityProfileComponent {
 
     #[embeddable_as(SymmetricLiquidityProfile)]
     pub impl SymmetricLiquidityProfileImpl<
-        TContractState,
-        +HasComponent<TContractState>,
-        +ILiquidityProfile<ComponentState<TContractState>>,
+        TContractState, +HasComponent<TContractState>,
     > of ILiquidityProfileBounds<ComponentState<TContractState>> {
         fn get_bounds_for_liquidity_updates(
             self: @ComponentState<TContractState>, pool_key: PoolKey,
@@ -53,6 +50,8 @@ pub mod SymmetricLiquidityProfileComponent {
             let mut bounds = array![];
             let mut next = tick_start + 2 * s;
             let mut step = (2 * s) / res;
+            assert(step != 0, 'step must be non-zero');
+
             while tick != tick_max {
                 // (0, 2*s], [2*s, 4*s], [4*s, 8*s], ...
                 // with each range split up into 1/resolution bins
