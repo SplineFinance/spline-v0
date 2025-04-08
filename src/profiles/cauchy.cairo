@@ -24,10 +24,9 @@ pub mod CauchyLiquidityProfile {
     const PI_NUM_U256: u256 = 355;
     const PI_DENOM_U256: u256 = 113;
 
-    // TODO: fill in for actual ekubo values and not just uni v3 values * 100 (since ekubo ticks are
-    // 0.01 bps)
-    const MIN_TICK: i129 = i129 { mag: 88727200, sign: true };
-    const MAX_TICK: i129 = i129 { mag: 88727200, sign: false };
+    // TODO: fill in the actual values from ekubo core
+    const MIN_TICK: i129 = i129 { mag: 8872720, sign: true };
+    const MAX_TICK: i129 = i129 { mag: 8872720, sign: false };
 
     #[abi(embed_v0)]
     impl SymmetricLiquidityProfileImpl =

@@ -1,17 +1,19 @@
 use core::num::traits::Zero;
 use ekubo::components::util::serialize;
-use ekubo::interfaces::core::UpdatePositionParameters;
+use ekubo::interfaces::core::{ICoreDispatcher, ICoreDispatcherTrait, UpdatePositionParameters};
 use ekubo::types::bounds::Bounds;
 use ekubo::types::i129::i129;
 use ekubo::types::keys::PoolKey;
 use openzeppelin_token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
 use snforge_std::{ContractClass, ContractClassTrait, DeclareResultTrait, declare};
+use spline_v0::lp::{ILiquidityProviderDispatcher, ILiquidityProviderDispatcherTrait};
 use spline_v0::math::muldiv;
 use spline_v0::profile::{
     ILiquidityProfile, ILiquidityProfileDispatcher, ILiquidityProfileDispatcherTrait,
 };
 use spline_v0::profiles::cauchy::CauchyLiquidityProfile;
-use starknet::{ContractAddress, get_contract_address};
+use spline_v0::token::{ILiquidityProviderTokenDispatcher, ILiquidityProviderTokenDispatcherTrait};
+use starknet::{ClassHash, ContractAddress, contract_address_const, get_contract_address};
 
 fn deploy_contract(class: @ContractClass, calldata: Array<felt252>) -> ContractAddress {
     let (contract_address, _) = class.deploy(@calldata).expect('Deploy contract failed');
@@ -36,7 +38,9 @@ fn deploy_token(
     IERC20Dispatcher { contract_address }
 }
 
-fn setup() -> (PoolKey, ILiquidityProfileDispatcher, Span<i129>) {
+fn setup() -> (
+    PoolKey, ILiquidityProfileDispatcher, Span<i129>, IERC20Dispatcher, IERC20Dispatcher,
+) {
     let class = declare("CauchyLiquidityProfile").unwrap().contract_class();
     let cauchy_address = deploy_contract(class, array![]);
 
@@ -74,17 +78,31 @@ fn setup() -> (PoolKey, ILiquidityProfileDispatcher, Span<i129>) {
     ]
         .span();
 
-    (pool_key, ILiquidityProfileDispatcher { contract_address: cauchy_address }, params)
+    (
+        pool_key,
+        ILiquidityProfileDispatcher { contract_address: cauchy_address },
+        params,
+        token0,
+        token1,
+    )
+}
+
+fn tick_limits_from_ekubo_core() -> (i129, i129) {
+    // TODO: fill in the actual values from ekubo core
+    const MIN_TICK: i129 = i129 { mag: 8872720, sign: true };
+    const MAX_TICK: i129 = i129 { mag: 8872720, sign: false };
+    (MIN_TICK, MAX_TICK)
 }
 
 // assumes params from setup()
-fn updates(sign: bool) -> Span<UpdatePositionParameters> {
+fn updates(pool_key: PoolKey, sign: bool) -> Span<UpdatePositionParameters> {
+    let (MIN_TICK, MAX_TICK) = tick_limits_from_ekubo_core();
     array![
         UpdatePositionParameters {
             salt: 0,
             bounds: Bounds {
-                lower: i129 { mag: 88727200, sign: true },
-                upper: i129 { mag: 88727200, sign: false },
+                lower: MIN_TICK + i129 { mag: MIN_TICK.mag % pool_key.tick_spacing, sign: false },
+                upper: MAX_TICK - i129 { mag: MAX_TICK.mag % pool_key.tick_spacing, sign: false },
             },
             liquidity_delta: i129 { mag: 9362055475993, sign: sign },
         },
@@ -220,14 +238,14 @@ fn assert_close(a: i129, b: i129, tol: u256) {
 
 #[test]
 fn test_set_liquidity_profile_updates_storage() {
-    let (pool_key, cauchy, params) = setup();
+    let (pool_key, cauchy, params, _, _) = setup();
     cauchy.set_liquidity_profile(pool_key, params);
     assert_eq!(cauchy.get_liquidity_profile(pool_key), params);
 }
 
 #[test]
 fn test_initial_liquidity_factor() {
-    let (pool_key, cauchy, params) = setup();
+    let (pool_key, cauchy, params, _, _) = setup();
     cauchy.set_liquidity_profile(pool_key, params);
 
     let l0 = cauchy.initial_liquidity_factor(pool_key, Zero::<i129>::zero());
@@ -236,7 +254,7 @@ fn test_initial_liquidity_factor() {
 
 #[test]
 fn test_description() {
-    let (_, cauchy, _) = setup();
+    let (_, cauchy, _, _, _) = setup();
     let (name, symbol) = cauchy.description();
     assert_eq!(name, "Cauchy");
     assert_eq!(symbol, "CAUCHY");
@@ -244,7 +262,7 @@ fn test_description() {
 
 #[test]
 fn test_get_liquidity_updates_with_positive_liquidity_factor() {
-    let (pool_key, cauchy, params) = setup();
+    let (pool_key, cauchy, params, _, _) = setup();
     cauchy.set_liquidity_profile(pool_key, params);
 
     let sign = false;
@@ -252,7 +270,7 @@ fn test_get_liquidity_updates_with_positive_liquidity_factor() {
     let liquidity_updates = cauchy.get_liquidity_updates(pool_key, liquidity_factor);
     assert_eq!(liquidity_updates.len(), 17);
 
-    let expected_updates = updates(sign);
+    let expected_updates = updates(pool_key, sign);
     for i in 0..liquidity_updates.len() {
         assert_eq!(*liquidity_updates[i].salt, *expected_updates[i].salt);
         assert_eq!(*liquidity_updates[i].bounds.lower, *expected_updates[i].bounds.lower);
@@ -267,7 +285,7 @@ fn test_get_liquidity_updates_with_positive_liquidity_factor() {
 
 #[test]
 fn test_get_liquidity_updates_with_negative_liquidity_factor() {
-    let (pool_key, cauchy, params) = setup();
+    let (pool_key, cauchy, params, _, _) = setup();
     cauchy.set_liquidity_profile(pool_key, params);
 
     let sign = true;
@@ -275,7 +293,7 @@ fn test_get_liquidity_updates_with_negative_liquidity_factor() {
     let liquidity_updates = cauchy.get_liquidity_updates(pool_key, liquidity_factor);
     assert_eq!(liquidity_updates.len(), 17);
 
-    let expected_updates = updates(sign);
+    let expected_updates = updates(pool_key, sign);
     for i in 0..liquidity_updates.len() {
         assert_eq!(*liquidity_updates[i].salt, *expected_updates[i].salt);
         assert_eq!(*liquidity_updates[i].bounds.lower, *expected_updates[i].bounds.lower);
@@ -286,4 +304,66 @@ fn test_get_liquidity_updates_with_negative_liquidity_factor() {
             one() / 1000000 // 1e-6
         );
     }
+}
+
+fn ekubo_core() -> ICoreDispatcher {
+    ICoreDispatcher {
+        contract_address: contract_address_const::<
+            0x00000005dd3D2F4429AF886cD1a3b08289DBcEa99A294197E9eB43b0e0325b4b,
+        >(),
+    }
+}
+
+fn setup_with_liquidity_provider() -> (
+    PoolKey,
+    ILiquidityProviderDispatcher,
+    ContractAddress,
+    ILiquidityProfileDispatcher,
+    Span<i129>,
+    IERC20Dispatcher,
+    IERC20Dispatcher,
+) {
+    let (pool_key, cauchy, params, token0, token1) = setup();
+
+    let contract_class = declare("LiquidityProvider").unwrap().contract_class();
+    let core: ICoreDispatcher = ekubo_core();
+    let owner: ContractAddress = get_contract_address();
+    let pool_token_class_hash: ClassHash = *declare("LiquidityProviderToken")
+        .unwrap()
+        .contract_class()
+        .class_hash;
+    let constructor_calldata: Array<felt252> = serialize::<
+        (ContractAddress, ContractAddress, ContractAddress, ClassHash),
+    >(@(core.contract_address, cauchy.contract_address, owner, pool_token_class_hash));
+
+    let lp = ILiquidityProviderDispatcher {
+        contract_address: deploy_contract(contract_class, constructor_calldata),
+    };
+
+    token0.approve(lp.contract_address, 0xffffffffffffffffffffffffffffffff);
+    token1.approve(lp.contract_address, 0xffffffffffffffffffffffffffffffff);
+
+    let new_pool_key = PoolKey {
+        token0: pool_key.token0,
+        token1: pool_key.token1,
+        fee: pool_key.fee,
+        tick_spacing: pool_key.tick_spacing,
+        extension: lp.contract_address,
+    };
+
+    (new_pool_key, lp, owner, cauchy, params, token0, token1)
+}
+
+#[test]
+#[fork("mainnet")]
+fn test_create_and_initialize_pool_with_cauchy_profile() {
+    let (pool_key, lp, owner, cauchy, params, token0, token1) = setup_with_liquidity_provider();
+    let initial_tick = i129 { mag: 0, sign: false };
+    // roughly given initial tick = 0. there should be excess in the lp contract after
+    // @dev quoter to fix this amount excess issue
+    let amount: u128 = 1000000000000000000;
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+
+    lp.create_and_initialize_pool(pool_key, initial_tick, params);
 }
