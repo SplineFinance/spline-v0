@@ -71,6 +71,10 @@ pub mod CauchyLiquidityProfile {
 
             // last 4 params are for cauchy
             assert(!*params[4].sign, 'Invalid params l0 sign');
+            assert(
+                *params[5].mag == *params[2].mag && *params[5].sign == *params[2].sign,
+                'mu != symmetric::tick_start',
+            );
             assert(!*params[6].sign, 'Invalid params gamma sign');
             let (l0, mu, gamma, rho) = (
                 *params[4].mag, *params[5], (*params[6].mag).try_into().unwrap(), *params[7],
@@ -79,12 +83,29 @@ pub mod CauchyLiquidityProfile {
         }
 
         fn get_liquidity_profile(ref self: ContractState, pool_key: PoolKey) -> Span<i129> {
+            let (s, res, tick_start, tick_max) = self.symmetric._get_grid(pool_key);
+            let s_i129: i129 = i129 { mag: s, sign: false };
+            let res_i129: i129 = i129 { mag: res, sign: false };
+            let tick_start_i129: i129 = tick_start;
+            let tick_max_i129: i129 = tick_max;
+
             let (l0, mu, gamma, rho) = self.params.read(pool_key);
             let l0_i129: i129 = i129 { mag: l0, sign: false };
             let mu_i129: i129 = mu;
             let gamma_i129: i129 = i129 { mag: gamma.try_into().unwrap(), sign: false };
             let rho_i129: i129 = rho;
-            array![l0_i129, mu_i129, gamma_i129, rho_i129].span()
+
+            array![
+                s_i129,
+                res_i129,
+                tick_start_i129,
+                tick_max_i129,
+                l0_i129,
+                mu_i129,
+                gamma_i129,
+                rho_i129,
+            ]
+                .span()
         }
 
         fn get_liquidity_updates(
