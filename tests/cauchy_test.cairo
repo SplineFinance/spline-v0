@@ -1,7 +1,10 @@
 use core::num::traits::Zero;
 use ekubo::components::util::serialize;
 use ekubo::interfaces::core::{ICoreDispatcher, ICoreDispatcherTrait, UpdatePositionParameters};
+use ekubo::interfaces::mathlib::{IMathLibDispatcherTrait, dispatcher as mathlib};
+use ekubo::interfaces::router::{IRouterDispatcher, IRouterDispatcherTrait, RouteNode, TokenAmount};
 use ekubo::types::bounds::Bounds;
+use ekubo::types::delta::Delta;
 use ekubo::types::i129::i129;
 use ekubo::types::keys::PoolKey;
 use openzeppelin_token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
@@ -12,6 +15,7 @@ use spline_v0::profile::{
     ILiquidityProfile, ILiquidityProfileDispatcher, ILiquidityProfileDispatcherTrait,
 };
 use spline_v0::profiles::cauchy::CauchyLiquidityProfile;
+use spline_v0::sweep::{ISweepableDispatcher, ISweepableDispatcherTrait};
 use spline_v0::token::{ILiquidityProviderTokenDispatcher, ILiquidityProviderTokenDispatcherTrait};
 use starknet::{ClassHash, ContractAddress, contract_address_const, get_contract_address};
 
@@ -74,7 +78,7 @@ fn setup() -> (
         i129 { mag: 1000000000000000000, sign: false },
         i129 { mag: 0, sign: false },
         i129 { mag: 2000, sign: false },
-        i129 { mag: 8000, sign: false },
+        i129 { mag: 64000, sign: false },
     ]
         .span();
 
@@ -104,7 +108,7 @@ fn updates(pool_key: PoolKey, sign: bool) -> Span<UpdatePositionParameters> {
                 lower: MIN_TICK + i129 { mag: MIN_TICK.mag % pool_key.tick_spacing, sign: false },
                 upper: MAX_TICK - i129 { mag: MAX_TICK.mag % pool_key.tick_spacing, sign: false },
             },
-            liquidity_delta: i129 { mag: 9362055475993, sign: sign },
+            liquidity_delta: i129 { mag: 155273115211, sign: sign },
         },
         UpdatePositionParameters {
             salt: 0,
@@ -314,6 +318,14 @@ fn ekubo_core() -> ICoreDispatcher {
     }
 }
 
+fn router() -> IRouterDispatcher {
+    IRouterDispatcher {
+        contract_address: contract_address_const::<
+            0x0199741822c2dc722f6f605204f35e56dbc23bceed54818168c4c49e4fb8737e,
+        >(),
+    }
+}
+
 fn setup_with_liquidity_provider() -> (
     PoolKey,
     ILiquidityProviderDispatcher,
@@ -372,7 +384,9 @@ fn test_create_and_initialize_pool_with_cauchy_profile() {
 
     assert_close(
         i129 { mag: liquidity, sign: false },
-        i129 { mag: 166068460981859, sign: false },
+        i129 {
+            mag: 156861678621077, sign: false,
+        }, // result from np.cumsum on discretized python model
         one() / 1000000,
     ); // value at initial tick = 0 should be some of range position liquidity deltas
 
@@ -419,7 +433,7 @@ fn test_add_liquidity_with_cauchy_profile() {
 
     assert_close(
         i129 { mag: liquidity, sign: false },
-        i129 { mag: 166068460981859 * 100, sign: false },
+        i129 { mag: 156861678621077 * 100, sign: false },
         one() / 1000000,
     ); // value at initial tick = 0 should be some of range position liquidity deltas
 
@@ -470,7 +484,7 @@ fn test_remove_liquidity_with_cauchy_profile() {
 
     assert_close(
         i129 { mag: liquidity, sign: false },
-        i129 { mag: 166068460981859 * 90, sign: false },
+        i129 { mag: 156861678621077 * 90, sign: false },
         one() / 1000000,
     ); // value at initial tick = 0 should be some of range position liquidity deltas
 
@@ -493,4 +507,51 @@ fn test_remove_liquidity_with_cauchy_profile() {
             one() / 1000000 // 1e-6
         );
     }
+}
+
+#[test]
+#[fork("mainnet")]
+fn test_swap_with_cauchy_profile() {
+    let (pool_key, lp, owner, cauchy, params, token0, token1) = setup_with_liquidity_provider();
+    let initial_tick = i129 { mag: 0, sign: false };
+    // roughly given initial tick = 0. there should be excess in the lp contract after
+    // @dev quoter to fix this amount excess issue
+    let amount: u128 = 10000000000000000000000; // 10_000 * 1e18
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+    lp.create_and_initialize_pool(pool_key, initial_tick, params);
+
+    // add liquidity
+    let factor =
+        10000000000000000000000000000; // 10_000_000_000 * 1e18 for ~ (1000, 1000) in (x, y) reserves
+    lp.add_liquidity(pool_key, factor);
+
+    // get the excess tokens back for swapping
+    ISweepableDispatcher { contract_address: lp.contract_address }
+        .sweep(pool_key.token0, get_contract_address(), 0);
+    ISweepableDispatcher { contract_address: lp.contract_address }
+        .sweep(pool_key.token1, get_contract_address(), 0);
+
+    // swap  50% of y reserves into pool
+    let buy_token = IERC20Dispatcher { contract_address: token1.contract_address };
+    let (_, reserve1) = lp.pool_reserves(pool_key);
+    let amount_in = reserve1 / 4;
+    buy_token.transfer(router().contract_address, amount_in.into());
+
+    let (_, max_tick) = tick_limits_from_ekubo_core();
+    let swap_delta = router()
+        .swap(
+            node: RouteNode {
+                pool_key, sqrt_ratio_limit: mathlib().tick_to_sqrt_ratio(max_tick), skip_ahead: 0,
+            },
+            token_amount: TokenAmount {
+                token: buy_token.contract_address, amount: i129 { mag: amount_in, sign: false },
+            },
+        );
+
+    // check low slippage due to cauchy profile even on significant percentage of reserves in
+    assert_eq!(swap_delta.amount1, i129 { mag: amount_in, sign: false });
+    assert_close(
+        swap_delta.amount1, i129 { mag: amount_in, sign: false }, one() / 1000,
+    ); // within 10 bps
 }
