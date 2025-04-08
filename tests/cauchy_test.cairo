@@ -346,7 +346,7 @@ fn setup_with_liquidity_provider() -> (
     let new_pool_key = PoolKey {
         token0: pool_key.token0,
         token1: pool_key.token1,
-        fee: pool_key.fee,
+        fee: 0,
         tick_spacing: pool_key.tick_spacing,
         extension: lp.contract_address,
     };
@@ -366,4 +366,33 @@ fn test_create_and_initialize_pool_with_cauchy_profile() {
     token1.transfer(lp.contract_address, amount.into());
 
     lp.create_and_initialize_pool(pool_key, initial_tick, params);
+
+    let core = ekubo_core();
+    let liquidity = core.get_pool_liquidity(pool_key);
+
+    assert_close(
+        i129 { mag: liquidity, sign: false },
+        i129 { mag: 166068460981859, sign: false },
+        one() / 1000000,
+    ); // value at initial tick = 0 should be some of range position liquidity deltas
+
+    // go through the liquidity delta updates and verify liquidity delta net values
+    let expected_updates = updates(pool_key, false);
+    for i in 0..expected_updates.len() {
+        let (liquidity_net_lower, liquidity_net_upper) = (
+            core.get_pool_tick_liquidity_delta(pool_key, *expected_updates[i].bounds.lower),
+            core.get_pool_tick_liquidity_delta(pool_key, *expected_updates[i].bounds.upper),
+        );
+
+        assert_close(
+            liquidity_net_lower,
+            i129 { mag: *expected_updates[i].liquidity_delta.mag, sign: false },
+            one() / 1000000 // 1e-6
+        );
+        assert_close(
+            liquidity_net_upper,
+            i129 { mag: *expected_updates[i].liquidity_delta.mag, sign: true },
+            one() / 1000000 // 1e-6
+        );
+    }
 }
