@@ -91,7 +91,7 @@ pub mod SymmetricLiquidityProfileComponent {
         }
 
         fn _get_grid(
-            ref self: ComponentState<TContractState>, pool_key: PoolKey,
+            self: @ComponentState<TContractState>, pool_key: PoolKey,
         ) -> (u128, u128, i129, i129) {
             self.grid.read(pool_key)
         }

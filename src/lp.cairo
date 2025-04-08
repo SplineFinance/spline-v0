@@ -21,21 +21,21 @@ pub trait ILiquidityProvider<TStorage> {
     ) -> u128;
 
     /// returns the ekubo core for pools deployed by this liquidity provider
-    fn core(ref self: TStorage) -> ekubo::interfaces::core::ICoreDispatcher;
+    fn core(self: @TStorage) -> ekubo::interfaces::core::ICoreDispatcher;
 
     /// returns the profile for pools deployed by this liquidity provider
-    fn profile(ref self: TStorage) -> spline_v0::profile::ILiquidityProfileDispatcher;
+    fn profile(self: @TStorage) -> spline_v0::profile::ILiquidityProfileDispatcher;
 
     /// returns the liquidity provider token for pool with ekubo key `pool_key`
     fn pool_token(
-        ref self: TStorage, pool_key: ekubo::types::keys::PoolKey,
+        self: @TStorage, pool_key: ekubo::types::keys::PoolKey,
     ) -> starknet::ContractAddress;
 
     // returns the current liquidity factor for pool with ekubo key `pool_key`
-    fn pool_liquidity_factor(ref self: TStorage, pool_key: ekubo::types::keys::PoolKey) -> u128;
+    fn pool_liquidity_factor(self: @TStorage, pool_key: ekubo::types::keys::PoolKey) -> u128;
 
     // returns the current reserves added by liquidity provider for pool with ekubo key `pool_key`
-    fn pool_reserves(ref self: TStorage, pool_key: ekubo::types::keys::PoolKey) -> (u128, u128);
+    fn pool_reserves(self: @TStorage, pool_key: ekubo::types::keys::PoolKey) -> (u128, u128);
 }
 
 #[starknet::contract]
@@ -252,41 +252,41 @@ pub mod LiquidityProvider {
             factor
         }
 
-        fn core(ref self: ContractState) -> ICoreDispatcher {
+        fn core(self: @ContractState) -> ICoreDispatcher {
             self.core.read()
         }
 
-        fn profile(ref self: ContractState) -> ILiquidityProfileDispatcher {
+        fn profile(self: @ContractState) -> ILiquidityProfileDispatcher {
             self.profile.read()
         }
 
-        fn pool_token(ref self: ContractState, pool_key: PoolKey) -> ContractAddress {
+        fn pool_token(self: @ContractState, pool_key: PoolKey) -> ContractAddress {
             self.pool_tokens.read(pool_key)
         }
 
-        fn pool_liquidity_factor(ref self: ContractState, pool_key: PoolKey) -> u128 {
+        fn pool_liquidity_factor(self: @ContractState, pool_key: PoolKey) -> u128 {
             self.pool_liquidity_factors.read(pool_key)
         }
 
-        fn pool_reserves(ref self: ContractState, pool_key: PoolKey) -> (u128, u128) {
+        fn pool_reserves(self: @ContractState, pool_key: PoolKey) -> (u128, u128) {
             self.pool_reserves.read(pool_key)
         }
     }
 
     #[generate_trait]
     impl InternalMethods of InternalMethodsTrait {
-        fn check_pool_key(ref self: ContractState, pool_key: PoolKey) {
+        fn check_pool_key(self: @ContractState, pool_key: PoolKey) {
             assert(pool_key.extension == get_contract_address(), 'Extension not this contract');
         }
 
-        fn check_pool_initialized(ref self: ContractState, pool_key: PoolKey) {
+        fn check_pool_initialized(self: @ContractState, pool_key: PoolKey) {
             assert(
                 self.pool_tokens.read(pool_key) != Zero::<ContractAddress>::zero(),
                 'Pool token not deployed',
             );
         }
 
-        fn check_pool_not_initialized(ref self: ContractState, pool_key: PoolKey) {
+        fn check_pool_not_initialized(self: @ContractState, pool_key: PoolKey) {
             assert(
                 self.pool_tokens.read(pool_key) == Zero::<ContractAddress>::zero(),
                 'Pool token already deployed',
@@ -294,7 +294,7 @@ pub mod LiquidityProvider {
         }
 
         fn get_pool_token_description(
-            ref self: ContractState, pool_key: PoolKey, profile: ILiquidityProfileDispatcher,
+            self: @ContractState, pool_key: PoolKey, profile: ILiquidityProfileDispatcher,
         ) -> (ByteArray, ByteArray) {
             let (profile_name, profile_symbol) = profile.description();
             let name = format!("Spline v0 {} LP Token", profile_name);
@@ -323,7 +323,7 @@ pub mod LiquidityProvider {
         }
 
         fn update_positions(
-            self: @ContractState, pool_key: PoolKey, liquidity_factor_delta: i129,
+            ref self: ContractState, pool_key: PoolKey, liquidity_factor_delta: i129,
         ) -> Delta {
             let core = self.core.read();
             let profile = self.profile.read();

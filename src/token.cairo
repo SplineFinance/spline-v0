@@ -1,7 +1,7 @@
 #[starknet::interface]
 pub trait ILiquidityProviderToken<TStorage> {
     // returns the mint/burn authority of the lp token
-    fn authority(ref self: TStorage) -> starknet::ContractAddress;
+    fn authority(self: @TStorage) -> starknet::ContractAddress;
 
     // initializes lp token with authority
     fn initialize(ref self: TStorage, authority: starknet::ContractAddress);
@@ -48,7 +48,7 @@ pub mod LiquidityProviderToken {
 
     #[abi(embed_v0)]
     pub impl LiquidityProviderTokenImpl of ILiquidityProviderToken<ContractState> {
-        fn authority(ref self: ContractState) -> ContractAddress {
+        fn authority(self: @ContractState) -> ContractAddress {
             self.authority.read()
         }
 

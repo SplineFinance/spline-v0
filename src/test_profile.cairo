@@ -15,13 +15,13 @@ pub mod TestProfile {
     #[abi(embed_v0)]
     pub impl ILiquidityProfileImpl of ILiquidityProfile<ContractState> {
         fn initial_liquidity_factor(
-            ref self: ContractState, pool_key: PoolKey, initial_tick: i129,
+            self: @ContractState, pool_key: PoolKey, initial_tick: i129,
         ) -> u128 {
             let (lf, _, _, _) = self.params.read(pool_key);
             lf.mag
         }
 
-        fn description(ref self: ContractState) -> (ByteArray, ByteArray) {
+        fn description(self: @ContractState) -> (ByteArray, ByteArray) {
             ("Test Profile", "TP")
         }
 
@@ -33,13 +33,13 @@ pub mod TestProfile {
             self.params.write(pool_key, (*params[0], *params[1], *params[2], *params[3]));
         }
 
-        fn get_liquidity_profile(ref self: ContractState, pool_key: PoolKey) -> Span<i129> {
+        fn get_liquidity_profile(self: @ContractState, pool_key: PoolKey) -> Span<i129> {
             let (lf, initial_tick, step, n) = self.params.read(pool_key);
             array![lf, initial_tick, step, n].span()
         }
 
         fn get_liquidity_updates(
-            ref self: ContractState, pool_key: PoolKey, liquidity_factor: i129,
+            self: @ContractState, pool_key: PoolKey, liquidity_factor: i129,
         ) -> Span<UpdatePositionParameters> {
             let (_, initial_tick, step, n) = self.params.read(pool_key);
             let mut updates = array![];

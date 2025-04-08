@@ -51,13 +51,13 @@ pub mod CauchyLiquidityProfile {
     #[abi(embed_v0)]
     pub impl ICauchyLiquidityProfileImpl of ILiquidityProfile<ContractState> {
         fn initial_liquidity_factor(
-            ref self: ContractState, pool_key: PoolKey, initial_tick: i129,
+            self: @ContractState, pool_key: PoolKey, initial_tick: i129,
         ) -> u128 {
             let (l0, _, _, _) = self.params.read(pool_key);
             l0
         }
 
-        fn description(ref self: ContractState) -> (ByteArray, ByteArray) {
+        fn description(self: @ContractState) -> (ByteArray, ByteArray) {
             ("Cauchy", "CAUCHY")
         }
 
@@ -81,7 +81,7 @@ pub mod CauchyLiquidityProfile {
             self.params.write(pool_key, (l0, mu, gamma, rho));
         }
 
-        fn get_liquidity_profile(ref self: ContractState, pool_key: PoolKey) -> Span<i129> {
+        fn get_liquidity_profile(self: @ContractState, pool_key: PoolKey) -> Span<i129> {
             let (s, res, tick_start, tick_max) = self.symmetric._get_grid(pool_key);
             let s_i129: i129 = i129 { mag: s, sign: false };
             let res_i129: i129 = i129 { mag: res, sign: false };
@@ -108,7 +108,7 @@ pub mod CauchyLiquidityProfile {
         }
 
         fn get_liquidity_updates(
-            ref self: ContractState, pool_key: PoolKey, liquidity_factor: i129,
+            self: @ContractState, pool_key: PoolKey, liquidity_factor: i129,
         ) -> Span<UpdatePositionParameters> {
             let bounds = self.symmetric.get_bounds_for_liquidity_updates(pool_key);
 
@@ -160,7 +160,7 @@ pub mod CauchyLiquidityProfile {
         // Returns Cauchy distribution liquidity profile:
         // l(l0, gamma, tick) = (l0 / (pi * gamma)) * (1 / (1 + ((tick - mu) / gamma)^2))
         fn _get_liquidity_at_tick(
-            ref self: ContractState,
+            self: @ContractState,
             pool_key: PoolKey,
             liquidity_factor: i129,
             mu: i129,
