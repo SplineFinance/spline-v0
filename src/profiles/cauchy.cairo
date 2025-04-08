@@ -135,7 +135,7 @@ pub mod CauchyLiquidityProfile {
 
             // go from furthest tick out to nearest to center for non-constant cauchy profile
             let n = bounds.len();
-            let mut cumulative: i129 = Zero::<i129>::zero();
+            let mut prior: i129 = Zero::<i129>::zero();
             for i in 0..n {
                 let j = n - i - 1;
                 let bound = bounds[j];
@@ -146,10 +146,10 @@ pub mod CauchyLiquidityProfile {
                 updates
                     .append(
                         UpdatePositionParameters {
-                            salt: 0, bounds: *bound, liquidity_delta: l - cumulative,
+                            salt: 0, bounds: *bound, liquidity_delta: l - prior,
                         },
                     );
-                cumulative += l;
+                prior = l;
             }
 
             updates.span()
