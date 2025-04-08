@@ -176,9 +176,7 @@ pub mod CauchyLiquidityProfile {
             let num: u256 = gamma_u256 * gamma_u256;
 
             let liquidity_factor_u256: u256 = liquidity_factor.mag.try_into().unwrap();
-            let l_u256: u256 = muldiv(
-                liquidity_factor_u256, num, denom,
-            ); // TODO: fix and handle overflow issues
+            let l_u256: u256 = muldiv(liquidity_factor_u256, num, denom);
 
             let l_scaled_u256: u256 = muldiv(l_u256, PI_DENOM_U256, PI_NUM_U256 * gamma_u256);
             let l_scaled: u128 = l_scaled_u256.try_into().unwrap();
