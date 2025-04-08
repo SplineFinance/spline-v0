@@ -396,3 +396,101 @@ fn test_create_and_initialize_pool_with_cauchy_profile() {
         );
     }
 }
+
+#[test]
+#[fork("mainnet")]
+fn test_add_liquidity_with_cauchy_profile() {
+    let (pool_key, lp, owner, cauchy, params, token0, token1) = setup_with_liquidity_provider();
+    let initial_tick = i129 { mag: 0, sign: false };
+    // roughly given initial tick = 0. there should be excess in the lp contract after
+    // @dev quoter to fix this amount excess issue
+    let amount: u128 = 100000000000000000000; // 100 * 1e18
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+    lp.create_and_initialize_pool(pool_key, initial_tick, params);
+
+    // add liquidity
+    let factor = 99000000000000000000; // 99 * 1e18
+    let shares: u256 = lp.add_liquidity(pool_key, factor);
+    assert_eq!(shares, 99000000000000000000);
+
+    let core = ekubo_core();
+    let liquidity = core.get_pool_liquidity(pool_key);
+
+    assert_close(
+        i129 { mag: liquidity, sign: false },
+        i129 { mag: 166068460981859 * 100, sign: false },
+        one() / 1000000,
+    ); // value at initial tick = 0 should be some of range position liquidity deltas
+
+    // go through the liquidity delta updates and verify liquidity delta net values
+    let expected_updates = updates(pool_key, false);
+    for i in 0..expected_updates.len() {
+        let (liquidity_net_lower, liquidity_net_upper) = (
+            core.get_pool_tick_liquidity_delta(pool_key, *expected_updates[i].bounds.lower),
+            core.get_pool_tick_liquidity_delta(pool_key, *expected_updates[i].bounds.upper),
+        );
+
+        assert_close(
+            liquidity_net_lower,
+            i129 { mag: *expected_updates[i].liquidity_delta.mag * 100, sign: false },
+            one() / 1000000 // 1e-6
+        );
+        assert_close(
+            liquidity_net_upper,
+            i129 { mag: *expected_updates[i].liquidity_delta.mag * 100, sign: true },
+            one() / 1000000 // 1e-6
+        );
+    }
+}
+
+#[test]
+#[fork("mainnet")]
+fn test_remove_liquidity_with_cauchy_profile() {
+    let (pool_key, lp, owner, cauchy, params, token0, token1) = setup_with_liquidity_provider();
+    let initial_tick = i129 { mag: 0, sign: false };
+    // roughly given initial tick = 0. there should be excess in the lp contract after
+    // @dev quoter to fix this amount excess issue
+    let amount: u128 = 100000000000000000000; // 100 * 1e18
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+    lp.create_and_initialize_pool(pool_key, initial_tick, params);
+
+    // add liquidity
+    let factor = 99000000000000000000; // 99 * 1e18
+    lp.add_liquidity(pool_key, factor);
+
+    // remove liquidity
+    let shares_removed: u256 = 10000000000000000000; // 10 * 1e18 (10% of total shares)
+    let factor_removed: u128 = lp.remove_liquidity(pool_key, shares_removed);
+    assert_eq!(factor_removed, 10000000000000000000);
+
+    let core = ekubo_core();
+    let liquidity = core.get_pool_liquidity(pool_key);
+
+    assert_close(
+        i129 { mag: liquidity, sign: false },
+        i129 { mag: 166068460981859 * 90, sign: false },
+        one() / 1000000,
+    ); // value at initial tick = 0 should be some of range position liquidity deltas
+
+    // go through the liquidity delta updates and verify liquidity delta net values
+    let expected_updates = updates(pool_key, false);
+    for i in 0..expected_updates.len() {
+        let (liquidity_net_lower, liquidity_net_upper) = (
+            core.get_pool_tick_liquidity_delta(pool_key, *expected_updates[i].bounds.lower),
+            core.get_pool_tick_liquidity_delta(pool_key, *expected_updates[i].bounds.upper),
+        );
+
+        assert_close(
+            liquidity_net_lower,
+            i129 { mag: *expected_updates[i].liquidity_delta.mag * 90, sign: false },
+            one() / 1000000 // 1e-6
+        );
+        assert_close(
+            liquidity_net_upper,
+            i129 { mag: *expected_updates[i].liquidity_delta.mag * 90, sign: true },
+            one() / 1000000 // 1e-6
+        );
+    }
+}
