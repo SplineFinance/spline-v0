@@ -37,13 +37,13 @@ pub mod SymmetricLiquidityProfileComponent {
             let mut ticks: Bounds = Bounds { lower: tick_start, upper: tick_start };
             let mut bounds = array![];
 
-            let mut seg: i129 = i129 { mag: 2 * s, sign: false };
+            let mut seg: i129 = i129 { mag: s, sign: false };
             let mut next: Bounds = Bounds { lower: tick_start - seg, upper: tick_start + seg };
-            let mut step: i129 = i129 { mag: (2 * s) / res, sign: false };
+            let mut step: i129 = i129 { mag: s / res, sign: false };
 
             let mut i: u256 = 0;
             while ticks.upper != tick_max {
-                // (0, 2*s], [2*s, 4*s], [4*s, 8*s], [8*s, 16*s], ...
+                // (0, s], [s, 2*s], [2*s, 4*s], [4*s, 8*s], [8*s, 16*s], ...
                 // with each range split up into 1/resolution bins
                 ticks.lower -= step;
                 ticks.upper += step;

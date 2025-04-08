@@ -80,12 +80,16 @@ fn setup() -> (PoolKey, ILiquidityProfileBoundsDispatcher, Span<i129>) {
 fn test_symmetric_liquidity_profile_get_bounds_for_liquidity_updates() {
     let (pool_key, symmetric, _) = setup();
     let bounds = symmetric.get_bounds_for_liquidity_updates(pool_key);
-    assert_eq!(bounds.len(), 12);
+    assert_eq!(bounds.len(), 16);
 
     let expected_bounds = array![
+        Bounds { lower: i129 { mag: 250, sign: true }, upper: i129 { mag: 250, sign: false } },
         Bounds { lower: i129 { mag: 500, sign: true }, upper: i129 { mag: 500, sign: false } },
+        Bounds { lower: i129 { mag: 750, sign: true }, upper: i129 { mag: 750, sign: false } },
         Bounds { lower: i129 { mag: 1000, sign: true }, upper: i129 { mag: 1000, sign: false } },
+        Bounds { lower: i129 { mag: 1250, sign: true }, upper: i129 { mag: 1250, sign: false } },
         Bounds { lower: i129 { mag: 1500, sign: true }, upper: i129 { mag: 1500, sign: false } },
+        Bounds { lower: i129 { mag: 1750, sign: true }, upper: i129 { mag: 1750, sign: false } },
         Bounds { lower: i129 { mag: 2000, sign: true }, upper: i129 { mag: 2000, sign: false } },
         Bounds { lower: i129 { mag: 2500, sign: true }, upper: i129 { mag: 2500, sign: false } },
         Bounds { lower: i129 { mag: 3000, sign: true }, upper: i129 { mag: 3000, sign: false } },

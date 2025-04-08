@@ -1,5 +1,6 @@
 use core::num::traits::Zero;
 use ekubo::components::util::serialize;
+use ekubo::interfaces::core::UpdatePositionParameters;
 use ekubo::types::bounds::Bounds;
 use ekubo::types::i129::i129;
 use ekubo::types::keys::PoolKey;
@@ -59,7 +60,7 @@ fn setup() -> (PoolKey, ILiquidityProfileDispatcher, Span<i129>) {
         extension: get_contract_address() // need this for set liq profile check
     };
 
-    // s, res, tick_start, tick_max
+    // s, res, tick_start, tick_max, l0, mu, gamma, rho
     let params = array![
         i129 { mag: 1000, sign: false },
         i129 { mag: 4, sign: false },
@@ -104,9 +105,23 @@ fn test_get_liquidity_updates_with_positive_liquidity_factor() {
     let (pool_key, cauchy, params) = setup();
     cauchy.set_liquidity_profile(pool_key, params);
 
-    let liquidity_factor = i129 { mag: 1000000000000000000, sign: false };
+    let sign = false;
+    let liquidity_factor = i129 { mag: 1000000000000000000, sign: sign };
     let liquidity_updates = cauchy.get_liquidity_updates(pool_key, liquidity_factor);
-    assert_eq!(liquidity_updates.len(), 13);
+    assert_eq!(liquidity_updates.len(), 17);
+
+    let expected_updates = array![
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: i129 { mag: 88727200, sign: true },
+                upper: i129 { mag: 88727200, sign: false },
+            },
+            liquidity_delta: i129 { mag: 9362055475993, sign: sign },
+        },
+    ]
+        .span();
+    // assert_eq!(liquidity_updates, expected_updates);
 }
 
 #[test]
@@ -114,7 +129,8 @@ fn test_get_liquidity_updates_with_negative_liquidity_factor() {
     let (pool_key, cauchy, params) = setup();
     cauchy.set_liquidity_profile(pool_key, params);
 
-    let liquidity_factor = i129 { mag: 1000000000000000000, sign: true };
+    let sign = true;
+    let liquidity_factor = i129 { mag: 1000000000000000000, sign: sign };
     let liquidity_updates = cauchy.get_liquidity_updates(pool_key, liquidity_factor);
-    assert_eq!(liquidity_updates.len(), 13);
+    assert_eq!(liquidity_updates.len(), 17);
 }
