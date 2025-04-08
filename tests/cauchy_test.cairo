@@ -64,11 +64,11 @@ fn setup() -> (PoolKey, ILiquidityProfileDispatcher, Span<i129>) {
         i129 { mag: 1000, sign: false },
         i129 { mag: 4, sign: false },
         i129 { mag: 0, sign: false },
-        i129 { mag: 10000, sign: false },
+        i129 { mag: 8000, sign: false },
         i129 { mag: 1000000000000000000, sign: false },
         i129 { mag: 0, sign: false },
         i129 { mag: 2000, sign: false },
-        i129 { mag: 80000, sign: false },
+        i129 { mag: 8000, sign: false },
     ]
         .span();
 
@@ -97,4 +97,24 @@ fn test_description() {
     let (name, symbol) = cauchy.description();
     assert_eq!(name, "Cauchy");
     assert_eq!(symbol, "CAUCHY");
+}
+
+#[test]
+fn test_get_liquidity_updates_with_positive_liquidity_factor() {
+    let (pool_key, cauchy, params) = setup();
+    cauchy.set_liquidity_profile(pool_key, params);
+
+    let liquidity_factor = i129 { mag: 1000000000000000000, sign: false };
+    let liquidity_updates = cauchy.get_liquidity_updates(pool_key, liquidity_factor);
+    assert_eq!(liquidity_updates.len(), 13);
+}
+
+#[test]
+fn test_get_liquidity_updates_with_negative_liquidity_factor() {
+    let (pool_key, cauchy, params) = setup();
+    cauchy.set_liquidity_profile(pool_key, params);
+
+    let liquidity_factor = i129 { mag: 1000000000000000000, sign: true };
+    let liquidity_updates = cauchy.get_liquidity_updates(pool_key, liquidity_factor);
+    assert_eq!(liquidity_updates.len(), 13);
 }

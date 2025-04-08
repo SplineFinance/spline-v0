@@ -40,7 +40,6 @@ pub trait ILiquidityProvider<TStorage> {
 
 #[starknet::contract]
 pub mod LiquidityProvider {
-    use core::felt252_div;
     use core::num::traits::Zero;
     use core::poseidon::poseidon_hash_span;
     use ekubo::components::owned::Owned as OwnedComponent;
@@ -62,6 +61,7 @@ pub mod LiquidityProvider {
     use openzeppelin_utils::interfaces::{
         IUniversalDeployerDispatcher, IUniversalDeployerDispatcherTrait,
     };
+    use spline_v0::math::muldiv;
     use spline_v0::profile::{ILiquidityProfileDispatcher, ILiquidityProfileDispatcherTrait};
     use spline_v0::sweep::SweepableComponent;
     use spline_v0::token::{
@@ -360,16 +360,8 @@ pub mod LiquidityProvider {
             assert(total_factor > 0, 'Total factor is 0');
             let denom: u256 = total_factor.try_into().unwrap();
             let num: u256 = factor.try_into().unwrap();
-
-            // into felt for muldiv
-            // TODO: verify round down not needed given felt252 div
-            let denom_felt252: felt252 = denom.try_into().unwrap();
-            let num_felt252: felt252 = num.try_into().unwrap();
-            let total_shares_felt252: felt252 = total_shares.try_into().unwrap();
-
-            let shares_felt252 = total_shares_felt252
-                * felt252_div(num_felt252, denom_felt252.try_into().unwrap());
-            return shares_felt252.try_into().unwrap();
+            let shares: u256 = muldiv(total_shares, num, denom);
+            shares
         }
 
         /// Calculates amount of factor to remove based on shares and total shares
@@ -381,15 +373,11 @@ pub mod LiquidityProvider {
             let denom: u256 = total_shares.try_into().unwrap();
             let num: u256 = shares.try_into().unwrap();
 
-            // into felt for muldiv
-            // TODO: verify round down not needed given felt252 div
-            let denom_felt252: felt252 = denom.try_into().unwrap();
-            let num_felt252: felt252 = num.try_into().unwrap();
-            let total_factor_felt252: felt252 = total_factor.try_into().unwrap();
+            let total_factor_u256: u256 = total_factor.try_into().unwrap();
+            let factor_u256: u256 = muldiv(total_factor_u256, num, denom);
 
-            let factor_felt252 = total_factor_felt252
-                * felt252_div(num_felt252, denom_felt252.try_into().unwrap());
-            return factor_felt252.try_into().unwrap();
+            let factor: u128 = factor_u256.try_into().unwrap();
+            factor
         }
     }
 

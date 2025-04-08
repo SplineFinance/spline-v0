@@ -3,12 +3,12 @@
 /// in pools with Cauchy liquidity profile.
 #[starknet::contract]
 pub mod CauchyLiquidityProfile {
-    use core::felt252_div;
     use core::num::traits::Zero;
     use ekubo::interfaces::core::UpdatePositionParameters;
     use ekubo::types::bounds::Bounds;
     use ekubo::types::i129::i129;
     use ekubo::types::keys::PoolKey;
+    use spline_v0::math::muldiv;
     use spline_v0::profile::ILiquidityProfile;
     use spline_v0::profiles::symmetric::SymmetricLiquidityProfileComponent;
     use starknet::get_caller_address;
@@ -21,8 +21,8 @@ pub mod CauchyLiquidityProfile {
     );
 
     //https://en.wikipedia.org/wiki/Approximations_of_π#:~:text=Depending%20on%20the%20purpose%20of,8·10%E2%88%928).
-    const PI_NUM_FELT252: felt252 = 355;
-    const PI_DENOM_FELT252: felt252 = 113;
+    const PI_NUM_U256: u256 = 355;
+    const PI_DENOM_U256: u256 = 113;
 
     // TODO: fill in for actual ekubo values and not just uni v3 values * 100 (since ekubo ticks are
     // 0.01 bps)
@@ -112,7 +112,6 @@ pub mod CauchyLiquidityProfile {
             ref self: ContractState, pool_key: PoolKey, liquidity_factor: i129,
         ) -> Span<UpdatePositionParameters> {
             let bounds = self.symmetric.get_bounds_for_liquidity_updates(pool_key);
-            let n = bounds.len();
 
             // full range constant base liquidity, defined by tick = rho on cauchy liquidity
             // distribution
@@ -121,25 +120,25 @@ pub mod CauchyLiquidityProfile {
                 + i129 { mag: MIN_TICK.mag % pool_key.tick_spacing, sign: false };
             let upper_fr: i129 = MAX_TICK
                 - i129 { mag: MAX_TICK.mag % pool_key.tick_spacing, sign: false };
-            let mut updates = array![
-                UpdatePositionParameters {
-                    salt: 0,
-                    bounds: Bounds { lower: lower_fr, upper: upper_fr },
-                    liquidity_delta: self
-                        ._get_liquidity_at_tick(
-                            pool_key,
-                            liquidity_factor,
-                            mu,
-                            gamma,
-                            i129 { mag: rho.try_into().unwrap(), sign: false },
-                        ),
-                },
-            ];
+
+            let mut updates = array![];
+            let liquidity_delta_fr = self
+                ._get_liquidity_at_tick(pool_key, liquidity_factor, mu, gamma, rho);
+            updates
+                .append(
+                    UpdatePositionParameters {
+                        salt: 0,
+                        bounds: Bounds { lower: lower_fr, upper: upper_fr },
+                        liquidity_delta: liquidity_delta_fr,
+                    },
+                );
 
             // go from furthest tick out to nearest to center for non-constant cauchy profile
+            let n = bounds.len();
             let mut cumulative: i129 = Zero::<i129>::zero();
-            for i in n..0 {
-                let bound = bounds[i];
+            for i in 0..n {
+                let j = n - i - 1;
+                let bound = bounds[j];
                 // @dev use upper bound on positive tick side so discretization <= continuous curve
                 // at all points
                 let l: i129 = self
@@ -152,6 +151,7 @@ pub mod CauchyLiquidityProfile {
                     );
                 cumulative += l;
             }
+
             updates.span()
         }
     }
@@ -168,7 +168,6 @@ pub mod CauchyLiquidityProfile {
             gamma: u64,
             tick: i129,
         ) -> i129 {
-            // felt252 has max value of 2^{251} + 17 * 2^{192} + 1 or ~2**224
             let gamma_u256: u256 = gamma.try_into().unwrap();
             let shifted_tick_mag_256: u256 = (tick - mu).mag.try_into().unwrap();
 
@@ -177,20 +176,14 @@ pub mod CauchyLiquidityProfile {
             let denom: u256 = gamma_u256 * gamma_u256 + shifted_tick_mag_256 * shifted_tick_mag_256;
             let num: u256 = gamma_u256 * gamma_u256;
 
-            let denom_felt252: felt252 = denom.try_into().unwrap();
-            let num_felt252: felt252 = num.try_into().unwrap();
+            let liquidity_factor_u256: u256 = liquidity_factor.mag.try_into().unwrap();
+            let l_u256: u256 = muldiv(
+                liquidity_factor_u256, num, denom,
+            ); // TODO: fix and handle overflow issues
 
-            let l: u128 = (liquidity_factor.mag.try_into().unwrap()
-                * felt252_div(num_felt252, denom_felt252.try_into().unwrap()))
-                .try_into()
-                .unwrap();
-
-            let pi_felt252_div = felt252_div(PI_NUM_FELT252, PI_DENOM_FELT252.try_into().unwrap());
-            let l_felt252: felt252 = l.try_into().unwrap();
-            let l_scaled: felt252 = felt252_div(
-                l_felt252, (pi_felt252_div * gamma_u256.try_into().unwrap()).try_into().unwrap(),
-            );
-            i129 { mag: l_scaled.try_into().unwrap(), sign: liquidity_factor.sign }
+            let l_scaled_u256: u256 = muldiv(l_u256, PI_DENOM_U256, PI_NUM_U256 * gamma_u256);
+            let l_scaled: u128 = l_scaled_u256.try_into().unwrap();
+            i129 { mag: l_scaled, sign: liquidity_factor.sign }
         }
     }
 }

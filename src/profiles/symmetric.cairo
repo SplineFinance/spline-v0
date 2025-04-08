@@ -19,7 +19,6 @@ pub mod SymmetricLiquidityProfileComponent {
     use ekubo::types::i129::i129;
     use ekubo::types::keys::PoolKey;
     use spline_v0::profiles::bounds::ILiquidityProfileBounds;
-    use starknet::get_caller_address;
     use starknet::storage::{Map, StorageMapReadAccess, StorageMapWriteAccess};
 
     #[storage]

@@ -1,4 +1,5 @@
 pub mod lp;
+pub mod math;
 pub mod profile;
 pub mod sweep;
 pub mod test_profile;
