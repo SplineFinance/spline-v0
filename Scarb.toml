@@ -29,3 +29,6 @@ test = "snforge test"
 
 [tool.scarb]
 allow-prebuilt-plugins = ["snforge_std"]
+
+[workspace]
+members = ["scripts/create_pool"]

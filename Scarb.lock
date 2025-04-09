@@ -2,6 +2,14 @@
 version = 1
 
 [[package]]
+name = "create_pool"
+version = "0.1.0"
+dependencies = [
+ "ekubo",
+ "sncast_std",
+]
+
+[[package]]
 name = "ekubo"
 version = "0.1.0"
 source = "git+https://github.com/ekuboprotocol/abis#edb6de8c9baf515f1053bbab3d86825d54a63bc3"
@@ -49,6 +57,12 @@ name = "openzeppelin_utils"
 version = "1.0.0"
 source = "registry+https://scarbs.xyz/"
 checksum = "sha256:fd348b31c4a4407add33adc3c2b8f26dca71dbd7431faaf726168f37a91db0c1"
+
+[[package]]
+name = "sncast_std"
+version = "0.40.0"
+source = "registry+https://scarbs.xyz/"
+checksum = "sha256:7f5cf0eae57f51ef6048765c48d551e82acc6169a5b9a9688018df4cbf0b92b3"
 
 [[package]]
 name = "snforge_scarb_plugin"
