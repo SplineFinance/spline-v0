@@ -218,6 +218,44 @@ fn test_create_and_initialize_pool_deploys_pool_token() {
 
 #[test]
 #[fork("mainnet")]
+fn test_multiple_create_and_initialize_pool_deploys_multiple_pool_tokens() {
+    let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
+    let step = *default_profile_params[2];
+    let n = *default_profile_params[3];
+    let initial_tick = i129 { mag: 0, sign: false };
+    // roughly given initial tick = 0. there should be excess in the lp contract after
+    // @dev quoter to fix this amount excess issue
+    let amount: u128 = (2 * step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+
+    assert_eq!(lp.pool_token(pool_key), Zero::<ContractAddress>::zero());
+    lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
+    let pool_token = lp.pool_token(pool_key);
+    assert_ne!(pool_token, Zero::<ContractAddress>::zero());
+
+    let lp_token = ILiquidityProviderTokenDispatcher { contract_address: pool_token };
+    assert_eq!(lp_token.authority(), lp.contract_address);
+
+    let new_pool_key = PoolKey {
+        token0: pool_key.token0,
+        token1: pool_key.token1,
+        fee: pool_key.fee * 10,
+        tick_spacing: 1,
+        extension: lp.contract_address,
+    };
+    assert_eq!(lp.pool_token(new_pool_key), Zero::<ContractAddress>::zero());
+    lp.create_and_initialize_pool(new_pool_key, initial_tick, default_profile_params);
+    let new_pool_token = lp.pool_token(new_pool_key);
+    assert_ne!(new_pool_token, Zero::<ContractAddress>::zero());
+
+    let new_lp_token = ILiquidityProviderTokenDispatcher { contract_address: new_pool_token };
+    assert_eq!(new_lp_token.authority(), lp.contract_address);
+    assert_ne!(new_lp_token.contract_address, lp_token.contract_address);
+}
+
+#[test]
+#[fork("mainnet")]
 fn test_create_and_initialize_pool_initializes_pool() {
     let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
     let step = *default_profile_params[2];

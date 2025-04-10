@@ -122,6 +122,7 @@ pub mod LiquidityProvider {
     }
 
     // TODO: handle swap fees fungibly with protocol fee rate charged
+    // TODO: should revert if balance delta is zero
     #[constructor]
     fn constructor(
         ref self: ContractState,
@@ -308,17 +309,13 @@ pub mod LiquidityProvider {
             let dispatcher = IUniversalDeployerDispatcher {
                 contract_address: UDC_ADDRESS.try_into().unwrap(),
             };
-
             let class_hash: ClassHash = self.pool_token_class_hash.read();
             let (name, symbol) = self.get_pool_token_description(pool_key, profile);
-            let calldata = serialize::<(ByteArray, ByteArray)>(@(name, symbol)).span();
+            let calldata = serialize::<(PoolKey, ByteArray, ByteArray)>(@(pool_key, name, symbol))
+                .span();
+
             let salt: felt252 = poseidon_hash_span(calldata);
-
             let pool_token = dispatcher.deploy_contract(class_hash, salt, false, calldata);
-            let authority = get_contract_address();
-            ILiquidityProviderTokenDispatcher { contract_address: pool_token }
-                .initialize(authority);
-
             return pool_token;
         }
 

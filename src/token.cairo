@@ -3,9 +3,6 @@ pub trait ILiquidityProviderToken<TStorage> {
     // returns the mint/burn authority of the lp token
     fn authority(self: @TStorage) -> starknet::ContractAddress;
 
-    // initializes lp token with authority
-    fn initialize(ref self: TStorage, authority: starknet::ContractAddress);
-
     // mints an amount of lp tokens to `to`
     fn mint(ref self: TStorage, to: starknet::ContractAddress, amount: u256);
 
@@ -16,6 +13,7 @@ pub trait ILiquidityProviderToken<TStorage> {
 #[starknet::contract]
 pub mod LiquidityProviderToken {
     use core::num::traits::Zero;
+    use ekubo::types::keys::PoolKey;
     use openzeppelin_token::erc20::{ERC20Component, ERC20HooksEmptyImpl};
     use starknet::storage::{StoragePointerReadAccess, StoragePointerWriteAccess};
     use starknet::{ContractAddress, get_caller_address};
@@ -42,22 +40,15 @@ pub mod LiquidityProviderToken {
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, name: ByteArray, symbol: ByteArray) {
+    fn constructor(ref self: ContractState, pool_key: PoolKey, name: ByteArray, symbol: ByteArray) {
         self.erc20.initializer(name, symbol);
+        self.authority.write(pool_key.extension);
     }
 
     #[abi(embed_v0)]
     pub impl LiquidityProviderTokenImpl of ILiquidityProviderToken<ContractState> {
         fn authority(self: @ContractState) -> ContractAddress {
             self.authority.read()
-        }
-
-        fn initialize(ref self: ContractState, authority: ContractAddress) {
-            assert(
-                self.authority.read() == Zero::<starknet::ContractAddress>::zero(),
-                'Already initialized',
-            );
-            self.authority.write(authority);
         }
 
         fn mint(ref self: ContractState, to: ContractAddress, amount: u256) {

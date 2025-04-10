@@ -1,17 +1,19 @@
+use core::num::traits::Zero;
 use ekubo::components::util::serialize;
+use ekubo::types::keys::PoolKey;
 use openzeppelin_token::erc20::interface::{
     IERC20Dispatcher, IERC20DispatcherTrait, IERC20MetadataDispatcher,
     IERC20MetadataDispatcherTrait,
 };
 use snforge_std::{ContractClass, ContractClassTrait, DeclareResultTrait, declare};
 use spline_v0::token::{ILiquidityProviderTokenDispatcher, ILiquidityProviderTokenDispatcherTrait};
-use starknet::get_contract_address;
+use starknet::{ContractAddress, get_contract_address};
 
 fn deploy_token(
-    class: @ContractClass, name: ByteArray, symbol: ByteArray,
+    class: @ContractClass, pool_key: PoolKey, name: ByteArray, symbol: ByteArray,
 ) -> ILiquidityProviderTokenDispatcher {
     let (contract_address, _) = class
-        .deploy(@serialize::<(ByteArray, ByteArray)>(@(name, symbol)))
+        .deploy(@serialize::<(PoolKey, ByteArray, ByteArray)>(@(pool_key, name, symbol)))
         .expect('Deploy token failed');
 
     ILiquidityProviderTokenDispatcher { contract_address }
@@ -19,7 +21,15 @@ fn deploy_token(
 
 fn setup() -> ILiquidityProviderTokenDispatcher {
     let token_class = declare("LiquidityProviderToken").unwrap().contract_class();
-    let token = deploy_token(token_class, "Token A", "A");
+
+    let pool_key = PoolKey {
+        token0: Zero::<ContractAddress>::zero(),
+        token1: Zero::<ContractAddress>::zero(),
+        extension: get_contract_address(),
+        fee: 0,
+        tick_spacing: 1,
+    };
+    let token = deploy_token(token_class, pool_key, "Token A", "A");
     token
 }
 
@@ -32,27 +42,9 @@ fn test_constructor_sets_name_and_symbol() {
 }
 
 #[test]
-fn test_initialize_sets_authority() {
-    let token = setup();
-    let auth = get_contract_address();
-    token.initialize(auth);
-    assert_eq!(token.authority(), auth);
-}
-
-#[test]
-#[should_panic(expected: ('Already initialized',))]
-fn test_initialize_fails_if_already_initialized() {
-    let token = setup();
-    let auth = get_contract_address();
-    token.initialize(auth);
-    token.initialize(token.contract_address);
-}
-
-#[test]
 fn test_mint_mints_funds() {
     let token = setup();
     let auth = get_contract_address();
-    token.initialize(auth);
 
     let token_erc20 = IERC20Dispatcher { contract_address: token.contract_address };
     assert_eq!(token_erc20.balance_of(token.contract_address), 0);
@@ -67,10 +59,24 @@ fn test_mint_mints_funds() {
     assert_eq!(token_erc20.total_supply(), amount * 2);
 }
 
+fn setup_not_authority() -> ILiquidityProviderTokenDispatcher {
+    let token_class = declare("LiquidityProviderToken").unwrap().contract_class();
+
+    let pool_key = PoolKey {
+        token0: Zero::<ContractAddress>::zero(),
+        token1: Zero::<ContractAddress>::zero(),
+        extension: Zero::<ContractAddress>::zero(),
+        fee: 0,
+        tick_spacing: 1,
+    };
+    let token = deploy_token(token_class, pool_key, "Token A", "A");
+    token
+}
+
 #[test]
 #[should_panic(expected: ('Not authority',))]
 fn test_mint_fails_if_not_authority() {
-    let token = setup();
+    let token = setup_not_authority();
     let auth = get_contract_address();
     token.mint(auth, 100);
 }
@@ -79,7 +85,6 @@ fn test_mint_fails_if_not_authority() {
 fn test_burn_burns_funds() {
     let token = setup();
     let auth = get_contract_address();
-    token.initialize(auth);
     token.mint(auth, 100);
     token.mint(token.contract_address, 100);
 
@@ -103,7 +108,7 @@ fn test_burn_burns_funds() {
 #[test]
 #[should_panic(expected: ('Not authority',))]
 fn test_burn_fails_if_not_authority() {
-    let token = setup();
+    let token = setup_not_authority();
     let auth = get_contract_address();
     token.burn(auth, 100);
 }
