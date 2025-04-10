@@ -129,7 +129,7 @@ fn setup() -> (
     let pool_key = PoolKey {
         token0: token0.contract_address,
         token1: token1.contract_address,
-        fee: 34028236692093846346337460743176821, // 1 bps (= 2**128 / 10000)
+        fee: 0,
         tick_spacing: 1, // 0.01 bps
         extension: lp.contract_address,
     };
@@ -240,8 +240,8 @@ fn test_multiple_create_and_initialize_pool_deploys_multiple_pool_tokens() {
     let new_pool_key = PoolKey {
         token0: pool_key.token0,
         token1: pool_key.token1,
-        fee: pool_key.fee * 10,
-        tick_spacing: 1,
+        fee: 0,
+        tick_spacing: 10,
         extension: lp.contract_address,
     };
     assert_eq!(lp.pool_token(new_pool_key), Zero::<ContractAddress>::zero());
@@ -520,7 +520,7 @@ fn test_create_and_initialize_pool_fails_if_extension_not_liquidity_provider() {
     let new_pool_key = PoolKey {
         token0: token0.contract_address,
         token1: token1.contract_address,
-        fee: 34028236692093846346337460743176821, // 1 bps (= 2**128 / 10000)
+        fee: 0,
         tick_spacing: 1, // 0.01 bps
         extension: Zero::<ContractAddress>::zero(),
     };
@@ -847,7 +847,7 @@ fn test_add_liquidity_fails_if_extension_not_liquidity_provider() {
     let pool_key = PoolKey {
         token0: token0.contract_address,
         token1: token1.contract_address,
-        fee: 34028236692093846346337460743176821, // 1 bps (= 2**128 / 10000)
+        fee: 0,
         tick_spacing: 1, // 0.01 bps
         extension: Zero::<ContractAddress>::zero(),
     };
@@ -1130,7 +1130,7 @@ fn test_remove_liquidity_fails_if_extension_not_liquidity_provider() {
     let pool_key = PoolKey {
         token0: token0.contract_address,
         token1: token1.contract_address,
-        fee: 34028236692093846346337460743176821, // 1 bps (= 2**128 / 10000)
+        fee: 0,
         tick_spacing: 1, // 0.01 bps
         extension: Zero::<ContractAddress>::zero(),
     };
@@ -1168,7 +1168,7 @@ fn test_after_swap_updates_pool_reserves() {
     assert_eq!(
         swap_delta,
         Delta {
-            amount0: i129 { mag: 99989999, sign: true },
+            amount0: i129 { mag: 99999999, sign: true },
             amount1: i129 { mag: 100000000, sign: false },
         },
     );

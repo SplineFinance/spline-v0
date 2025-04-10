@@ -278,6 +278,7 @@ pub mod LiquidityProvider {
     impl InternalMethods of InternalMethodsTrait {
         fn check_pool_key(self: @ContractState, pool_key: PoolKey) {
             assert(pool_key.extension == get_contract_address(), 'Extension not this contract');
+            assert(pool_key.fee == 0, 'Pool key fee not zero');
         }
 
         fn check_pool_initialized(self: @ContractState, pool_key: PoolKey) {

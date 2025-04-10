@@ -64,7 +64,7 @@ fn setup() -> (
     let pool_key = PoolKey {
         token0: token0.contract_address,
         token1: token1.contract_address,
-        fee: 34028236692093846346337460743176821, // 1 bps (= 2**128 / 10000)
+        fee: 0,
         tick_spacing: 1, // 0.01 bps
         extension: get_contract_address() // need this for set liq profile check
     };
