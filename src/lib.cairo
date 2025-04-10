@@ -5,6 +5,7 @@ pub mod sweep;
 pub mod test_profile;
 pub mod test_sweep;
 pub mod test_token;
+pub mod test_token_decimals;
 pub mod token;
 pub mod profiles {
     pub mod bounds;
