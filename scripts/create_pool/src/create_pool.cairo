@@ -4,11 +4,9 @@ use ekubo::types::keys::PoolKey;
 use sncast_std::{DeclareResultTrait, FeeSettingsTrait, call, declare, deploy, get_nonce, invoke};
 
 // The example below uses a contract deployed to the Sepolia testnet
-const LP_ADDRESS: felt252 = 0x078fbf83da3a7d909ecd0c9b827031e5b5e58ecf5dde3033e9c2110de708334c;
-const TOKEN0_ADDRESS: felt252 =
-    0x03e3e511edccccd3218f12b32f86c2f9f21d6d760e2af1fbd7d415ea477c3113; // TODO: replace
-const TOKEN1_ADDRESS: felt252 =
-    0x04e06f6ff5e7624edddffaaa6848709ba40ff4d8bc29b5855904d7c69846c228; // TODO: replace
+const LP_ADDRESS: felt252 = 0x071526eff10921bfb796bceb24d3c8587c5a22b4cf081180640c293db8b12da6;
+const TOKEN0_ADDRESS: felt252 = 0x01eef5765e3a5d6dd690ada3f8162f4fc6d62112028da27e9f518233afb9b66d; // TODO: replace
+const TOKEN1_ADDRESS: felt252 = 0x03Fe2b97C1Fd336E750087D68B9b867997Fd64a2661fF3ca5A7C771641e8e7AC; // TODO: replace
 
 fn main() {
     let fee_settings = FeeSettingsTrait::max_fee(999999999999999999);
@@ -27,7 +25,7 @@ fn main() {
         i129 { mag: 4, sign: false },
         i129 { mag: 0, sign: false },
         i129 { mag: 8000, sign: false },
-        i129 { mag: 1000000000000000000, sign: false },
+        i129 { mag: 1000, sign: false },
         i129 { mag: 0, sign: false },
         i129 { mag: 2000, sign: false },
         i129 { mag: 64000, sign: false },

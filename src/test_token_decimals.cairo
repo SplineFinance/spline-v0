@@ -1,27 +1,29 @@
-use starknet::ContractAddress;
-
 #[starknet::contract]
 pub mod TestTokenDecimals {
     use openzeppelin_token::erc20::interface::{IERC20, IERC20Metadata};
+    use openzeppelin_token::erc20::{ERC20Component, ERC20HooksEmptyImpl};
+    use starknet::ContractAddress;
     use starknet::storage::{
-        Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePathEntry,
-        StoragePointerReadAccess, StoragePointerWriteAccess,
+        StorageMapReadAccess, StoragePointerReadAccess, StoragePointerWriteAccess,
     };
-    use starknet::{ContractAddress, get_caller_address};
+
+    component!(path: ERC20Component, storage: erc20, event: ERC20Event);
+
+    impl ERC20InternalImpl = ERC20Component::InternalImpl<ContractState>;
 
     #[storage]
     struct Storage {
-        total_supply: u256,
-        balances: Map<ContractAddress, u256>,
-        allowances: Map<ContractAddress, Map<ContractAddress, u256>>,
-        name: ByteArray,
-        symbol: ByteArray,
         decimals: u8,
+        #[substorage(v0)]
+        erc20: ERC20Component::Storage,
     }
 
-    #[derive(starknet::Event, Drop)]
     #[event]
-    enum Event {}
+    #[derive(Drop, starknet::Event)]
+    enum Event {
+        #[flat]
+        ERC20Event: ERC20Component::Event,
+    }
 
     #[constructor]
     fn constructor(
@@ -30,76 +32,101 @@ pub mod TestTokenDecimals {
         symbol: ByteArray,
         decimals: u8,
         recipient: ContractAddress,
-        amount: u256,
+        supply: u256,
     ) {
-        self.name.write(name);
-        self.symbol.write(symbol);
+        self.erc20.initializer(name, symbol);
+        self.erc20.mint(recipient, supply);
         self.decimals.write(decimals);
-        self.balances.entry(recipient).write(amount);
-        self.total_supply.write(amount);
     }
 
     #[abi(embed_v0)]
-    impl IERC20MetadataImpl of IERC20Metadata<ContractState> {
-        /// Returns the name of the token.
-        fn name(self: @ContractState) -> ByteArray {
-            self.name.read()
-        }
-
-        /// Returns the ticker symbol of the token, usually a shorter version of the name.
-        fn symbol(self: @ContractState) -> ByteArray {
-            self.symbol.read()
-        }
-
-        /// Returns the number of decimals used to get its user representation.
-        fn decimals(self: @ContractState) -> u8 {
-            self.decimals.read()
-        }
-    }
-
-    #[abi(embed_v0)]
-    impl IERC20Impl of IERC20<ContractState> {
-        fn balance_of(self: @ContractState, account: ContractAddress) -> u256 {
-            self.balances.read(account)
-        }
-
+    impl ERC20 of IERC20<ContractState> {
+        /// Returns the value of tokens in existence.
         fn total_supply(self: @ContractState) -> u256 {
-            self.total_supply.read()
+            self.erc20.ERC20_total_supply.read()
         }
 
+        /// Returns the amount of tokens owned by `account`.
+        fn balance_of(self: @ContractState, account: ContractAddress) -> u256 {
+            self.erc20.ERC20_balances.read(account)
+        }
+
+        /// Returns the remaining number of tokens that `spender` is
+        /// allowed to spend on behalf of `owner` through `transfer_from`.
+        /// This is zero by default.
+        /// This value changes when `approve` or `transfer_from` are called.
         fn allowance(
             self: @ContractState, owner: ContractAddress, spender: ContractAddress,
         ) -> u256 {
-            self.allowances.entry(owner).read(spender)
+            self.erc20.ERC20_allowances.read((owner, spender))
         }
 
+        /// Moves `amount` tokens from the caller's token balance to `to`.
+        ///
+        /// Requirements:
+        ///
+        /// - `recipient` is not the zero address.
+        /// - The caller has a balance of at least `amount`.
+        ///
+        /// Emits a `Transfer` event.
         fn transfer(ref self: ContractState, recipient: ContractAddress, amount: u256) -> bool {
-            let balance = self.balances.read(get_caller_address());
-            assert(balance >= amount, 'INSUFFICIENT_TRANSFER_BALANCE');
-            self.balances.write(recipient, self.balances.read(recipient) + amount);
-            self.balances.write(get_caller_address(), balance - amount);
+            let sender = starknet::get_caller_address();
+            self.erc20._transfer(sender, recipient, amount);
             true
         }
 
+        /// Moves `amount` tokens from `from` to `to` using the allowance mechanism.
+        /// `amount` is then deducted from the caller's allowance.
+        ///
+        /// Requirements:
+        ///
+        /// - `sender` is not the zero address.
+        /// - `sender` must have a balance of at least `amount`.
+        /// - `recipient` is not the zero address.
+        /// - The caller has an allowance of `sender`'s tokens of at least `amount`.
+        ///
+        /// Emits a `Transfer` event.
         fn transfer_from(
             ref self: ContractState,
             sender: ContractAddress,
             recipient: ContractAddress,
             amount: u256,
         ) -> bool {
-            let allowance = self.allowances.entry(sender).read(get_caller_address());
-            assert(allowance >= amount, 'INSUFFICIENT_ALLOWANCE');
-            let balance = self.balances.read(sender);
-            assert(balance >= amount, 'INSUFFICIENT_TF_BALANCE');
-            self.balances.write(recipient, self.balances.read(recipient) + amount);
-            self.balances.write(sender, balance - amount);
-            self.allowances.entry(sender).write(get_caller_address(), allowance - amount);
+            let caller = starknet::get_caller_address();
+            self.erc20._spend_allowance(sender, caller, amount);
+            self.erc20._transfer(sender, recipient, amount);
             true
         }
 
+        /// Sets `amount` as the allowance of `spender` over the caller’s tokens.
+        ///
+        /// Requirements:
+        ///
+        /// - `spender` is not the zero address.
+        ///
+        /// Emits an `Approval` event.
         fn approve(ref self: ContractState, spender: ContractAddress, amount: u256) -> bool {
-            self.allowances.entry(get_caller_address()).write(spender, amount.try_into().unwrap());
+            let caller = starknet::get_caller_address();
+            self.erc20._approve(caller, spender, amount);
             true
+        }
+    }
+
+    #[abi(embed_v0)]
+    impl ERC20Metadata of IERC20Metadata<ContractState> {
+        /// Returns the name of the token.
+        fn name(self: @ContractState) -> ByteArray {
+            self.erc20.ERC20_name.read()
+        }
+
+        /// Returns the ticker symbol of the token, usually a shorter version of the name.
+        fn symbol(self: @ContractState) -> ByteArray {
+            self.erc20.ERC20_symbol.read()
+        }
+
+        /// Returns the number of decimals used to get its user representation.
+        fn decimals(self: @ContractState) -> u8 {
+            self.decimals.read()
         }
     }
 }
