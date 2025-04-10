@@ -92,9 +92,8 @@ fn setup() -> (
 }
 
 fn tick_limits_from_ekubo_core() -> (i129, i129) {
-    // TODO: fill in the actual values from ekubo core
-    const MIN_TICK: i129 = i129 { mag: 8872720, sign: true };
-    const MAX_TICK: i129 = i129 { mag: 8872720, sign: false };
+    const MIN_TICK: i129 = i129 { mag: 88722883, sign: true };
+    const MAX_TICK: i129 = i129 { mag: 88722883, sign: false };
     (MIN_TICK, MAX_TICK)
 }
 
