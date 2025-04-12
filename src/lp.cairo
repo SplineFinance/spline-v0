@@ -76,7 +76,7 @@ pub mod LiquidityProvider {
     use super::ILiquidityProvider;
 
     const UDC_ADDRESS: felt252 = 0x04a64cd09a853868621d94cae9952b106f2c36a3f81260f85de6696c6b050221;
-    const PROTOCOL_FEE_DENOM: u128 = 4; // 25% of total swap fees
+    const PROTOCOL_FEE_DENOM: u128 = 2; // 50% of total swap fees
 
     component!(path: OwnedComponent, storage: owned, event: OwnedEvent);
     #[abi(embed_v0)]

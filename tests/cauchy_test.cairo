@@ -64,7 +64,7 @@ fn setup() -> (
     let pool_key = PoolKey {
         token0: token0.contract_address,
         token1: token1.contract_address,
-        fee: 0,
+        fee: 136112946768375391908118547436404736, // 2**128 / 2500 or 4 bps
         tick_spacing: 1, // 0.01 bps
         extension: get_contract_address() // need this for set liq profile check
     };
@@ -357,7 +357,7 @@ fn setup_with_liquidity_provider() -> (
     let new_pool_key = PoolKey {
         token0: pool_key.token0,
         token1: pool_key.token1,
-        fee: 0,
+        fee: 136112946768375391908118547436404736, // 2**128 / 2500 or 4 bps
         tick_spacing: pool_key.tick_spacing,
         extension: lp.contract_address,
     };
