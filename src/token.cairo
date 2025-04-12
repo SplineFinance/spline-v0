@@ -12,7 +12,6 @@ pub trait ILiquidityProviderToken<TStorage> {
 
 #[starknet::contract]
 pub mod LiquidityProviderToken {
-    use core::num::traits::Zero;
     use ekubo::types::keys::PoolKey;
     use openzeppelin_token::erc20::{ERC20Component, ERC20HooksEmptyImpl};
     use starknet::storage::{StoragePointerReadAccess, StoragePointerWriteAccess};

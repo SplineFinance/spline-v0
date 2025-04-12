@@ -34,7 +34,8 @@ pub trait ILiquidityProvider<TStorage> {
     // returns the current liquidity factor for pool with ekubo key `pool_key`
     fn pool_liquidity_factor(self: @TStorage, pool_key: ekubo::types::keys::PoolKey) -> u128;
 
-    // returns the current reserves added by liquidity provider for pool with ekubo key `pool_key`
+    // returns the current reserves added by liquidity provider for pool with ekubo key `pool_key`,
+    // including fees accumulated on pool
     fn pool_reserves(self: @TStorage, pool_key: ekubo::types::keys::PoolKey) -> (u128, u128);
 }
 
@@ -76,6 +77,8 @@ pub mod LiquidityProvider {
     use super::ILiquidityProvider;
 
     const UDC_ADDRESS: felt252 = 0x04a64cd09a853868621d94cae9952b106f2c36a3f81260f85de6696c6b050221;
+
+    // @dev protocol fee denom must be > 1
     const PROTOCOL_FEE_DENOM: u128 = 2; // 50% of total swap fees
 
     component!(path: OwnedComponent, storage: owned, event: OwnedEvent);
@@ -407,69 +410,42 @@ pub mod LiquidityProvider {
 
             // get min of liquidity factors could generate from fee collection
             let liquidity_factor: u128 = self.pool_liquidity_factors.read(pool_key);
+            // @dev pool reserves *include* accumulated fees so factor them out
             let (pool_reserve0, pool_reserve1): (u128, u128) = self.pool_reserves.read(pool_key);
+            let (pool_reserve0_less_fees, pool_reserve1_less_fees) = (
+                pool_reserve0 - delta.amount0.mag, pool_reserve1 - delta.amount1.mag,
+            );
+            if pool_reserve0_less_fees == 0 || pool_reserve1_less_fees == 0 {
+                return 0;
+            }
+
+            // fees delta to add as compounded liquidity should exclude protocol amounts
+            let protocol_fees_delta = Delta {
+                amount0: self.calculate_protocol_fees(delta.amount0),
+                amount1: self.calculate_protocol_fees(delta.amount1),
+            };
+            delta -= protocol_fees_delta;
 
             let liquidity_fees0: u128 = self
                 .calculate_factor(
                     liquidity_factor,
                     delta.amount0.mag.try_into().unwrap(),
-                    pool_reserve0.try_into().unwrap(),
+                    pool_reserve0_less_fees.try_into().unwrap(),
                 );
             let liquidity_fees1: u128 = self
                 .calculate_factor(
                     liquidity_factor,
                     delta.amount1.mag.try_into().unwrap(),
-                    pool_reserve1.try_into().unwrap(),
+                    pool_reserve1_less_fees.try_into().unwrap(),
                 );
             let liquidity_fees: u128 = min(liquidity_fees0, liquidity_fees1);
 
             liquidity_fees
         }
 
-        fn calculate_protocol_fees(ref self: ContractState, liquidity_fees_delta: i129) -> i129 {
-            let liquidity_protocol_fees_delta = i129 {
-                mag: liquidity_fees_delta.mag / PROTOCOL_FEE_DENOM, sign: liquidity_fees_delta.sign,
-            };
-            liquidity_protocol_fees_delta
-        }
-
-        fn get_protocol_fees_delta(
-            ref self: ContractState,
-            fees_delta: Delta,
-            liquidity_fees_delta: i129,
-            liquidity_protocol_fees_delta: i129,
-        ) -> Delta {
-            let liquidity_total_delta = liquidity_fees_delta + liquidity_protocol_fees_delta;
-
-            let liquidity_total_delta_u256: u256 = liquidity_total_delta.mag.try_into().unwrap();
-            let liquidity_fees_delta_u256: u256 = liquidity_fees_delta.mag.try_into().unwrap();
-
-            let fees_delta_amount0_u256: u256 = fees_delta.amount0.mag.try_into().unwrap();
-            let fees_delta_amount1_u256: u256 = fees_delta.amount1.mag.try_into().unwrap();
-
-            let protocol_fees_delta = Delta {
-                amount0: i129 {
-                    mag: muldiv(
-                        fees_delta_amount0_u256,
-                        liquidity_total_delta_u256,
-                        liquidity_fees_delta_u256,
-                    )
-                        .try_into()
-                        .unwrap()
-                        - fees_delta.amount0.mag,
-                    sign: fees_delta.amount0.sign,
-                },
-                amount1: i129 {
-                    mag: muldiv(
-                        fees_delta_amount1_u256,
-                        liquidity_total_delta_u256,
-                        liquidity_fees_delta_u256,
-                    )
-                        .try_into()
-                        .unwrap()
-                        - fees_delta.amount1.mag,
-                    sign: fees_delta.amount1.sign,
-                },
+        fn calculate_protocol_fees(ref self: ContractState, total_fees_delta: i129) -> i129 {
+            let protocol_fees_delta = i129 {
+                mag: total_fees_delta.mag / PROTOCOL_FEE_DENOM, sign: total_fees_delta.sign,
             };
             protocol_fees_delta
         }
@@ -496,33 +472,61 @@ pub mod LiquidityProvider {
             // collect fees from core and autocompound as liquidity fees on core positions
             assert(liquidity_fees_delta >= Zero::<i129>::zero(), 'Liq fees delta must be >= 0');
             let collected_fees_delta = self.collect_fees(pool_key); // negative as out from core
-
-            // factor protocol fee rate into liquidity fees delta
-            let liquidity_protocol_fees_delta = self.calculate_protocol_fees(liquidity_fees_delta);
             let fees_delta = self
-                .update_positions(
-                    pool_key, liquidity_fees_delta - liquidity_protocol_fees_delta,
-                ); // positive as in to core
-            let protocol_fees_delta = self
-                .get_protocol_fees_delta(
-                    fees_delta,
-                    liquidity_fees_delta - liquidity_protocol_fees_delta,
-                    liquidity_protocol_fees_delta,
-                ); // same sign as fees_delta
+                .update_positions(pool_key, liquidity_fees_delta); // positive as in to core
 
-            // refund any excess unused collected fees back to core
-            let excess_fees_delta = collected_fees_delta
-                + fees_delta
-                + protocol_fees_delta; // negative as collected > fees
+            // TODO: check protocol fee denom >= 2 there are no edge cases where dont have excess
+            // TODO: need this to never revert due to a rounding issue (maybe min harvest liquidity)
+            let mut excess_fees_delta = collected_fees_delta + fees_delta;
+            assert(
+                excess_fees_delta.amount0 <= Zero::<i129>::zero(),
+                'Collected must be > added fees0',
+            );
+            assert(
+                excess_fees_delta.amount1 <= Zero::<i129>::zero(),
+                'Collected must be > added fees1',
+            );
+
+            // require protocol fees delta to be less than excess remaining
+            let mut protocol_fees_delta = Zero::<Delta>::zero();
+            protocol_fees_delta
+                .amount0 =
+                    i129 {
+                        mag: fees_delta.amount0.mag / (PROTOCOL_FEE_DENOM - 1),
+                        sign: fees_delta.amount0.sign,
+                    };
+
+            if protocol_fees_delta.amount0 > -excess_fees_delta.amount0 {
+                protocol_fees_delta.amount0 = -excess_fees_delta.amount0;
+            }
+
+            protocol_fees_delta
+                .amount1 =
+                    i129 {
+                        mag: fees_delta.amount1.mag / (PROTOCOL_FEE_DENOM - 1),
+                        sign: fees_delta.amount1.sign,
+                    };
+
+            if protocol_fees_delta.amount1 > -excess_fees_delta.amount1 {
+                protocol_fees_delta.amount1 = -excess_fees_delta.amount1;
+            }
+
+            // remove protocol fees from excess remaining and refund any back to core
+            excess_fees_delta += protocol_fees_delta;
             if excess_fees_delta != Zero::<Delta>::zero() {
-                assert(excess_fees_delta.amount0 <= Zero::<i129>::zero(), 'Amount0 must be <= 0');
-                assert(excess_fees_delta.amount1 <= Zero::<i129>::zero(), 'Amount1 must be <= 0');
-
                 // refund any excess unused collected fees back to core
                 let core = self.core.read();
                 let amount0: u128 = excess_fees_delta.amount0.mag;
                 let amount1: u128 = excess_fees_delta.amount1.mag;
-                core.accumulate_as_fees(pool_key, amount0, amount1);
+                // @dev require full range liquidity on profile so never get zero liquidity error
+                let liquidity: u128 = core.get_pool_liquidity(pool_key);
+                if liquidity > 0 {
+                    core.accumulate_as_fees(pool_key, amount0, amount1);
+                } else {
+                    // sweep into protocol fees delta since no liquidity to accumulate fees into
+                    protocol_fees_delta.amount0 += i129 { mag: amount0, sign: false };
+                    protocol_fees_delta.amount1 += i129 { mag: amount1, sign: false };
+                }
             }
 
             (fees_delta, protocol_fees_delta)
@@ -545,7 +549,7 @@ pub mod LiquidityProvider {
             let balance_delta = self.update_positions(pool_key, liquidity_factor_delta);
 
             // update tracked reserves in storage
-            self.update_reserves(pool_key, balance_delta);
+            self.update_reserves(pool_key, balance_delta - protocol_fees_delta);
 
             // settle up balance deltas with core
             // TODO: check collected fees do *NOT* induce transfers and simply accounting deltas on
