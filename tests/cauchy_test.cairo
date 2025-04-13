@@ -6,7 +6,7 @@ use ekubo::interfaces::router::{IRouterDispatcher, IRouterDispatcherTrait, Route
 use ekubo::types::bounds::Bounds;
 use ekubo::types::delta::Delta;
 use ekubo::types::i129::i129;
-use ekubo::types::keys::PoolKey;
+use ekubo::types::keys::{PoolKey, PositionKey};
 use openzeppelin_token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
 use snforge_std::{ContractClass, ContractClassTrait, DeclareResultTrait, declare};
 use spline_v0::lp::{ILiquidityProviderDispatcher, ILiquidityProviderDispatcherTrait};
@@ -551,6 +551,346 @@ fn test_swap_with_cauchy_profile() {
     // check low slippage due to cauchy profile even on significant percentage of reserves in
     assert_eq!(swap_delta.amount1, i129 { mag: amount_in, sign: false });
     assert_close(
-        swap_delta.amount1, i129 { mag: amount_in, sign: false }, one() / 1000,
+        -swap_delta.amount0, i129 { mag: amount_in, sign: false }, one() / 1000,
     ); // within 10 bps
+}
+
+fn calculate_fees_on_pool(
+    pool_key: PoolKey, lp: ILiquidityProviderDispatcher, profile: ILiquidityProfileDispatcher,
+) -> Delta {
+    // calculate the fees delta accumulated on pool
+    let updates = profile.get_liquidity_updates(pool_key, Zero::<i129>::zero());
+    let mut fees_delta = Zero::<Delta>::zero();
+    for update in updates {
+        let position_key = PositionKey {
+            salt: (*update.salt).try_into().unwrap(),
+            owner: lp.contract_address,
+            bounds: *update.bounds,
+        };
+        let result = ekubo_core().get_position_with_fees(pool_key, position_key);
+        fees_delta.amount0 += i129 { mag: result.fees0, sign: false };
+        fees_delta.amount1 += i129 { mag: result.fees1, sign: false };
+    }
+    fees_delta
+}
+
+#[test]
+#[fork("mainnet")]
+fn test_harvest_fees_on_add_liquidity_with_cauchy_profile() {
+    let (pool_key, lp, owner, cauchy, params, token0, token1) = setup_with_liquidity_provider();
+    let initial_tick = i129 { mag: 0, sign: false };
+    // roughly given initial tick = 0. there should be excess in the lp contract after
+    // @dev quoter to fix this amount excess issue
+    let amount: u128 = 10000000000000000000000; // 10_000 * 1e18
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+    lp.create_and_initialize_pool(pool_key, initial_tick, params);
+
+    // add liquidity
+    let factor =
+        9999999999000000000000000000; // 9_999_999_999 * 1e18 for ~ (1000, 1000) in (x, y) reserves
+    lp.add_liquidity(pool_key, factor);
+
+    // get the excess tokens back for swapping
+    ISweepableDispatcher { contract_address: lp.contract_address }
+        .sweep(pool_key.token0, get_contract_address(), 0);
+    ISweepableDispatcher { contract_address: lp.contract_address }
+        .sweep(pool_key.token1, get_contract_address(), 0);
+
+    let n: u8 = 2;
+    for i in 0..n {
+        // swap  50% of reserves into pool
+        let zero_for_one: bool = (i % 2 == 0);
+        let buy_token = if !zero_for_one {
+            IERC20Dispatcher { contract_address: token1.contract_address }
+        } else {
+            IERC20Dispatcher { contract_address: token0.contract_address }
+        };
+        let (reserve0, reserve1) = lp.pool_reserves(pool_key);
+        let reserve_in = if !zero_for_one {
+            reserve1
+        } else {
+            reserve0
+        };
+        let amount_in = reserve_in / 4;
+        buy_token.transfer(router().contract_address, amount_in.into());
+
+        let (min_tick, max_tick) = tick_limits_from_ekubo_core();
+        let sqrt_ratio_limit = if !zero_for_one {
+            mathlib().tick_to_sqrt_ratio(max_tick)
+        } else {
+            mathlib().tick_to_sqrt_ratio(min_tick)
+        };
+        let swap_delta = router()
+            .swap(
+                node: RouteNode { pool_key, sqrt_ratio_limit: sqrt_ratio_limit, skip_ahead: 0 },
+                token_amount: TokenAmount {
+                    token: buy_token.contract_address, amount: i129 { mag: amount_in, sign: false },
+                },
+            );
+
+        // check low slippage due to cauchy profile even on significant percentage of reserves in
+        let swap_delta_amount_in = if !zero_for_one {
+            swap_delta.amount1
+        } else {
+            swap_delta.amount0
+        };
+        let swap_delta_amount_out = if !zero_for_one {
+            swap_delta.amount0
+        } else {
+            swap_delta.amount1
+        };
+        assert_eq!(swap_delta_amount_in, i129 { mag: amount_in, sign: false });
+        assert_close(
+            -swap_delta_amount_out, i129 { mag: amount_in, sign: false }, one() / 1000,
+        ); // within 10 bps
+    }
+
+    // add liquidity to pool and check that fees are compounded into liquidity prior
+    let liquidity_factor = lp.pool_liquidity_factor(pool_key);
+    let total_shares = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
+        .total_supply();
+    assert_eq!(liquidity_factor, 10000000000000000000000000000);
+    assert_eq!(total_shares, 10000000000000000000000000000);
+
+    // check that fees outstanding on pool liquidity taking out fees to protocol
+    let protocol_fee_rate: u128 = 2;
+    let mut fees_delta = calculate_fees_on_pool(pool_key, lp, cauchy);
+    fees_delta.amount0 -= fees_delta.amount0 / i129 { mag: protocol_fee_rate, sign: false };
+    fees_delta.amount1 -= fees_delta.amount1 / i129 { mag: protocol_fee_rate, sign: false };
+
+    let (reserve0, reserve1) = lp.pool_reserves(pool_key);
+    let liquidity_fees0 = muldiv(
+        fees_delta.amount0.mag.into(), liquidity_factor.into(), reserve0.into(),
+    );
+    let liquidity_fees1 = muldiv(
+        fees_delta.amount1.mag.into(), liquidity_factor.into(), reserve1.into(),
+    );
+    let liquidity_fees: u128 = (if liquidity_fees0 < liquidity_fees1 {
+        liquidity_fees0
+    } else {
+        liquidity_fees1
+    })
+        .try_into()
+        .unwrap();
+
+    // add the extra liquidity
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+    let shares = lp.add_liquidity(pool_key, factor);
+    assert_lt!(shares, factor.into());
+
+    let liquidity_factor_after = lp.pool_liquidity_factor(pool_key);
+    assert_close(
+        i129 { mag: liquidity_factor_after - liquidity_factor - factor, sign: false },
+        i129 { mag: liquidity_fees, sign: false },
+        one() / 10000,
+    );
+
+    let expected_shares = muldiv(
+        total_shares, factor.into(), (liquidity_factor + liquidity_fees).into(),
+    );
+    assert_close(
+        i129 { mag: shares.try_into().unwrap(), sign: false },
+        i129 { mag: expected_shares.try_into().unwrap(), sign: false },
+        one() / 10000,
+    );
+    assert_eq!(
+        IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }.total_supply(),
+        total_shares + shares,
+    );
+
+    // check that liquidity profile is as expected
+    let liquidity_updates = cauchy
+        .get_liquidity_updates(pool_key, i129 { mag: liquidity_factor_after, sign: false });
+    let l0 = cauchy.initial_liquidity_factor(pool_key, Zero::<i129>::zero());
+    let expected_updates = updates(pool_key, false); // for l0
+    for i in 0..liquidity_updates.len() {
+        let liquidity_delta_for_fees = muldiv(
+            (*expected_updates[i]).liquidity_delta.mag.into(), liquidity_fees.into(), l0.into(),
+        );
+        assert_close(
+            *liquidity_updates[i].liquidity_delta,
+            *expected_updates[i].liquidity_delta * (i129 { mag: 19_999_999_999, sign: false })
+                + i129 { mag: liquidity_delta_for_fees.try_into().unwrap(), sign: false },
+            one() / 1000000 // 1e-6
+        );
+
+        // check with position
+        let position_key = PositionKey {
+            salt: (*liquidity_updates[i].salt).try_into().unwrap(),
+            owner: lp.contract_address,
+            bounds: *liquidity_updates[i].bounds,
+        };
+        let result = ekubo_core().get_position_with_fees(pool_key, position_key);
+        assert_close(
+            (*liquidity_updates[i]).liquidity_delta,
+            i129 { mag: result.position.liquidity, sign: false },
+            one() / 1000000 // 1e-6
+        );
+    }
+}
+
+#[test]
+#[fork("mainnet")]
+fn test_harvest_fees_on_remove_liquidity_with_cauchy_profile() {
+    let (pool_key, lp, owner, cauchy, params, token0, token1) = setup_with_liquidity_provider();
+    let initial_tick = i129 { mag: 0, sign: false };
+    // roughly given initial tick = 0. there should be excess in the lp contract after
+    // @dev quoter to fix this amount excess issue
+    let amount: u128 = 10000000000000000000000; // 10_000 * 1e18
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+    lp.create_and_initialize_pool(pool_key, initial_tick, params);
+
+    // add liquidity
+    let factor =
+        9999999999000000000000000000; // 9_999_999_999 * 1e18 for ~ (1000, 1000) in (x, y) reserves
+    lp.add_liquidity(pool_key, factor);
+
+    // get the excess tokens back for swapping
+    ISweepableDispatcher { contract_address: lp.contract_address }
+        .sweep(pool_key.token0, get_contract_address(), 0);
+    ISweepableDispatcher { contract_address: lp.contract_address }
+        .sweep(pool_key.token1, get_contract_address(), 0);
+
+    let n: u8 = 2;
+    for i in 0..n {
+        // swap  50% of reserves into pool
+        let zero_for_one: bool = (i % 2 != 0); // go the other way
+        let buy_token = if !zero_for_one {
+            IERC20Dispatcher { contract_address: token1.contract_address }
+        } else {
+            IERC20Dispatcher { contract_address: token0.contract_address }
+        };
+        let (reserve0, reserve1) = lp.pool_reserves(pool_key);
+        let reserve_in = if !zero_for_one {
+            reserve1
+        } else {
+            reserve0
+        };
+        let amount_in = reserve_in / 4;
+        buy_token.transfer(router().contract_address, amount_in.into());
+
+        let (min_tick, max_tick) = tick_limits_from_ekubo_core();
+        let sqrt_ratio_limit = if !zero_for_one {
+            mathlib().tick_to_sqrt_ratio(max_tick)
+        } else {
+            mathlib().tick_to_sqrt_ratio(min_tick)
+        };
+        let swap_delta = router()
+            .swap(
+                node: RouteNode { pool_key, sqrt_ratio_limit: sqrt_ratio_limit, skip_ahead: 0 },
+                token_amount: TokenAmount {
+                    token: buy_token.contract_address, amount: i129 { mag: amount_in, sign: false },
+                },
+            );
+
+        // check low slippage due to cauchy profile even on significant percentage of reserves in
+        let swap_delta_amount_in = if !zero_for_one {
+            swap_delta.amount1
+        } else {
+            swap_delta.amount0
+        };
+        let swap_delta_amount_out = if !zero_for_one {
+            swap_delta.amount0
+        } else {
+            swap_delta.amount1
+        };
+        assert_eq!(swap_delta_amount_in, i129 { mag: amount_in, sign: false });
+        assert_close(
+            -swap_delta_amount_out, i129 { mag: amount_in, sign: false }, one() / 1000,
+        ); // within 10 bps
+    }
+
+    // add liquidity to pool and check that fees are compounded into liquidity prior
+    let liquidity_factor = lp.pool_liquidity_factor(pool_key);
+    let total_shares = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
+        .total_supply();
+    assert_eq!(liquidity_factor, 10000000000000000000000000000);
+    assert_eq!(total_shares, 10000000000000000000000000000);
+
+    // check that fees outstanding on pool liquidity taking out fees to protocol
+    let protocol_fee_rate: u128 = 2;
+    let mut fees_delta = calculate_fees_on_pool(pool_key, lp, cauchy);
+    fees_delta.amount0 -= fees_delta.amount0 / i129 { mag: protocol_fee_rate, sign: false };
+    fees_delta.amount1 -= fees_delta.amount1 / i129 { mag: protocol_fee_rate, sign: false };
+
+    let (reserve0, reserve1) = lp.pool_reserves(pool_key);
+    let liquidity_fees0 = muldiv(
+        fees_delta.amount0.mag.into(), liquidity_factor.into(), reserve0.into(),
+    );
+    let liquidity_fees1 = muldiv(
+        fees_delta.amount1.mag.into(), liquidity_factor.into(), reserve1.into(),
+    );
+    let liquidity_fees: u128 = (if liquidity_fees0 < liquidity_fees1 {
+        liquidity_fees0
+    } else {
+        liquidity_fees1
+    })
+        .try_into()
+        .unwrap();
+
+    // remove some liquidity
+    let shares = total_shares / 2;
+    let factor_removed = lp.remove_liquidity(pool_key, shares);
+    assert_lt!(shares, factor_removed.into());
+
+    let liquidity_factor_after = lp.pool_liquidity_factor(pool_key);
+    assert_close(
+        i129 { mag: liquidity_factor_after + factor_removed - liquidity_factor, sign: false },
+        i129 { mag: liquidity_fees, sign: false },
+        one() / 10000,
+    );
+
+    let expected_shares = muldiv(
+        total_shares, factor_removed.into(), (liquidity_factor + liquidity_fees).into(),
+    );
+    assert_close(
+        i129 { mag: shares.try_into().unwrap(), sign: false },
+        i129 { mag: expected_shares.try_into().unwrap(), sign: false },
+        one() / 10000,
+    );
+    assert_eq!(
+        IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }.total_supply(),
+        total_shares - shares,
+    );
+
+    // check that liquidity profile is as expected
+    let liquidity_updates = cauchy
+        .get_liquidity_updates(pool_key, i129 { mag: liquidity_factor_after, sign: false });
+    let l0 = cauchy.initial_liquidity_factor(pool_key, Zero::<i129>::zero());
+    let expected_updates = updates(pool_key, false); // for l0
+    for i in 0..liquidity_updates.len() {
+        assert_eq!(*liquidity_updates[i].salt, *expected_updates[i].salt);
+        assert_eq!(*liquidity_updates[i].bounds.lower, *expected_updates[i].bounds.lower);
+        assert_eq!(*liquidity_updates[i].bounds.upper, *expected_updates[i].bounds.upper);
+        let liquidity_delta_for_fees = muldiv(
+            (*expected_updates[i]).liquidity_delta.mag.into(), liquidity_fees.into(), l0.into(),
+        );
+        let expected_liquidity_delta_prior = *expected_updates[i].liquidity_delta.mag
+            * 10_000_000_000
+            + liquidity_delta_for_fees.try_into().unwrap();
+        let expected_liquidity_delta_after = expected_liquidity_delta_prior
+            / 2; // took out 50% of shares
+
+        assert_close(
+            *liquidity_updates[i].liquidity_delta,
+            i129 { mag: expected_liquidity_delta_after, sign: false },
+            one() / 1000000 // 1e-6
+        );
+
+        // check with position
+        let position_key = PositionKey {
+            salt: (*liquidity_updates[i].salt).try_into().unwrap(),
+            owner: lp.contract_address,
+            bounds: *liquidity_updates[i].bounds,
+        };
+        let result = ekubo_core().get_position_with_fees(pool_key, position_key);
+        assert_close(
+            (*liquidity_updates[i]).liquidity_delta,
+            i129 { mag: result.position.liquidity, sign: false },
+            one() / 1000000 // 1e-6
+        );
+    }
 }
