@@ -1393,7 +1393,6 @@ fn test_add_liquidity_harvest_fees_adds_liquidity_prior_with_tick_less_than_init
     // check protocol fees transferred to owner
     let owner_balance0_after: u256 = token0.balance_of(owner);
     let owner_balance1_after: u256 = token1.balance_of(owner);
-    let pool_price: PoolPrice = core.get_pool_price(pool_key);
     let liquidity_factor_added_u256: u256 = liquidity_factor_added.try_into().unwrap();
 
     if liquidity_factor_added0_u256 == liquidity_factor_added_u256 {
@@ -1592,7 +1591,6 @@ fn test_add_liquidity_harvest_fees_adds_liquidity_prior_with_tick_greater_than_i
     // check protocol fees transferred to owner
     let owner_balance0_after: u256 = token0.balance_of(owner);
     let owner_balance1_after: u256 = token1.balance_of(owner);
-    let pool_price: PoolPrice = core.get_pool_price(pool_key);
     let liquidity_factor_added_u256: u256 = liquidity_factor_added.try_into().unwrap();
 
     if liquidity_factor_added0_u256 == liquidity_factor_added_u256 {
@@ -1720,4 +1718,398 @@ fn test_add_liquidity_harvest_fees_sends_excess_to_protocol_when_pool_liquidity_
 
     let shares_added = lp.add_liquidity(pool_key, factor);
     assert_lt!(shares_added, factor.try_into().unwrap());
+}
+
+#[test]
+#[fork("mainnet")]
+fn test_remove_liquidity_harvest_fees_adds_liquidity_prior_with_tick_less_than_initial() {
+    let (pool_key, lp, _, _, default_profile_params, token0, token1, fees_delta) =
+        setup_harvest_fees(
+        true, 1000000000000000000,
+    );
+    let (fees0_u256, fees1_u256): (u256, u256) = (
+        fees_delta.amount0.mag.try_into().unwrap(), fees_delta.amount1.mag.try_into().unwrap(),
+    );
+    assert_gt!(fees0_u256, 0);
+    assert_gt!(fees1_u256, 0);
+
+    let core = ekubo_core();
+    let pool_price: PoolPrice = core.get_pool_price(pool_key);
+    assert_gt!(pool_price.tick.mag, 0);
+    assert_eq!(pool_price.tick.sign, true);
+
+    let liquidity_prior: u128 = core.get_pool_liquidity(pool_key);
+    assert_gt!(liquidity_prior, 0);
+    let liquidity_factor_prior: u128 = lp.pool_liquidity_factor(pool_key);
+
+    let fees_per_liquidity_prior: FeesPerLiquidity = core.get_pool_fees_per_liquidity(pool_key);
+    let fees_per_liquidity_prior_value0_u256: u256 = fees_per_liquidity_prior
+        .value0
+        .try_into()
+        .unwrap();
+    let fees_per_liquidity_prior_value1_u256: u256 = fees_per_liquidity_prior
+        .value1
+        .try_into()
+        .unwrap();
+    assert_gt!(fees_per_liquidity_prior_value0_u256, 0);
+    assert_gt!(fees_per_liquidity_prior_value1_u256, 0);
+
+    let (reserves0_prior, reserves1_prior): (u128, u128) = lp.pool_reserves(pool_key);
+
+    // liquidity added to pool should be min between 0, 1 fees delta factoring out protocol fee rate
+    // @dev protocol fee rate is 50% of total swap fees
+    let protocol_fee_rate: u128 = 2;
+    let fees_delta_less_protocol: Delta = Delta {
+        amount0: i129 {
+            mag: fees_delta.amount0.mag - fees_delta.amount0.mag / protocol_fee_rate, sign: false,
+        },
+        amount1: i129 {
+            mag: fees_delta.amount1.mag - fees_delta.amount1.mag / protocol_fee_rate, sign: false,
+        },
+    };
+    let liquidity_factor_added0_u256: u256 = muldiv(
+        liquidity_factor_prior.try_into().unwrap(),
+        fees_delta_less_protocol.amount0.mag.try_into().unwrap(),
+        reserves0_prior.try_into().unwrap() - fees0_u256,
+    );
+    let liquidity_factor_added1_u256: u256 = muldiv(
+        liquidity_factor_prior.try_into().unwrap(),
+        fees_delta_less_protocol.amount1.mag.try_into().unwrap(),
+        reserves1_prior.try_into().unwrap() - fees1_u256,
+    );
+    let liquidity_factor_added: u128 = min(
+        liquidity_factor_added0_u256, liquidity_factor_added1_u256,
+    )
+        .try_into()
+        .unwrap();
+
+    let liquidity_factor_prior: u128 = lp.pool_liquidity_factor(pool_key);
+    let total_shares_prior: u256 = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
+        .total_supply();
+
+    // remove liquidity and check shares_added < factor input due to fee harvest
+    let step = *default_profile_params[2];
+    let n = *default_profile_params[3];
+    let shares_prior = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
+        .balance_of(get_contract_address());
+    let shares_removed = shares_prior / 2;
+
+    // cache balances of owner before to check protocol fees transferred
+    let owner = contract_address_const::<'new_owner'>();
+    let lp_owned: IOwnedDispatcher = IOwnedDispatcher { contract_address: lp.contract_address };
+    lp_owned.transfer_ownership(owner);
+
+    let owner_balance0_before: u256 = token0.balance_of(owner);
+    let owner_balance1_before: u256 = token1.balance_of(owner);
+
+    // add the liquidity
+    let factor = lp.remove_liquidity(pool_key, shares_removed);
+    let total_shares_after: u256 = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
+        .total_supply();
+    assert_eq!(total_shares_after, total_shares_prior - shares_removed);
+    assert_lt!(shares_removed, factor.try_into().unwrap()); // due to fees harvest
+
+    let liquidity_factor_after: u128 = lp.pool_liquidity_factor(pool_key);
+    assert_eq!(liquidity_factor_after + factor - liquidity_factor_prior, liquidity_factor_added);
+
+    // check shares burned
+    let shares_burned: u256 = muldiv(
+        total_shares_prior,
+        factor.try_into().unwrap(),
+        (liquidity_factor_prior + liquidity_factor_added).try_into().unwrap(),
+    );
+    assert_close(shares_burned, shares_removed, one() / 1000000);
+
+    // check pool reserves still match core balance of tokens
+    let (reserves0_after, reserves1_after) = lp.pool_reserves(pool_key);
+    assert_eq!(
+        reserves0_after, token0.balance_of(ekubo_core().contract_address).try_into().unwrap(),
+    );
+    assert_eq!(
+        reserves1_after, token1.balance_of(ekubo_core().contract_address).try_into().unwrap(),
+    );
+
+    // check protocol fees transferred to owner
+    let owner_balance0_after: u256 = token0.balance_of(owner);
+    let owner_balance1_after: u256 = token1.balance_of(owner);
+    let liquidity_factor_added_u256: u256 = liquidity_factor_added.try_into().unwrap();
+
+    if liquidity_factor_added0_u256 == liquidity_factor_added_u256 {
+        assert_close(
+            owner_balance0_after - owner_balance0_before,
+            fees0_u256 / protocol_fee_rate.try_into().unwrap(),
+            one() / 10000,
+        );
+        let fees1_u256_added = muldiv(
+            fees1_u256, liquidity_factor_added_u256, liquidity_factor_added1_u256,
+        );
+        assert_close(
+            owner_balance1_after - owner_balance1_before,
+            fees1_u256_added / protocol_fee_rate.try_into().unwrap(),
+            one() / 10000,
+        );
+    } else {
+        assert_close(
+            owner_balance1_after - owner_balance1_before,
+            fees1_u256 / protocol_fee_rate.try_into().unwrap(),
+            one() / 10000,
+        );
+        let fees0_u256_added = muldiv(
+            fees0_u256, liquidity_factor_added_u256, liquidity_factor_added0_u256,
+        );
+        assert_close(
+            owner_balance0_after - owner_balance0_before,
+            fees0_u256_added / protocol_fee_rate.try_into().unwrap(),
+            one() / 10000,
+        );
+    }
+
+    // check positions on pool have been updated
+    let initial_tick = i129 { mag: 0, sign: false };
+    let liquidity_factor_after_delta: i129 = i129 { mag: liquidity_factor_after, sign: false };
+    let liquidity_updates_after: Span<UpdatePositionParameters> = array![
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 1, sign: false } * step,
+                upper: initial_tick + i129 { mag: 1, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor_after_delta / i129 { mag: 1, sign: false },
+        },
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 2, sign: false } * step,
+                upper: initial_tick + i129 { mag: 2, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor_after_delta / i129 { mag: 2, sign: false },
+        },
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 3, sign: false } * step,
+                upper: initial_tick + i129 { mag: 3, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor_after_delta / i129 { mag: 3, sign: false },
+        },
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 4, sign: false } * step,
+                upper: initial_tick + i129 { mag: 4, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor_after_delta / i129 { mag: 4, sign: false },
+        },
+    ]
+        .span();
+
+    // check liquidity at expected profile ticks according to test profile
+    for update in liquidity_updates_after {
+        let position_key = PositionKey {
+            salt: 0, owner: lp.contract_address, bounds: *update.bounds,
+        };
+        let position = core.get_position(pool_key, position_key);
+        assert_close(
+            position.liquidity.try_into().unwrap(),
+            (*update.liquidity_delta.mag).try_into().unwrap(),
+            one() / 10000,
+        );
+    }
+}
+
+#[test]
+#[fork("mainnet")]
+fn test_remove_liquidity_harvest_fees_adds_liquidity_prior_with_tick_greater_than_initial() {
+    let (pool_key, lp, _, _, default_profile_params, token0, token1, fees_delta) =
+        setup_harvest_fees(
+        false, 1000000000000000000,
+    );
+    let (fees0_u256, fees1_u256): (u256, u256) = (
+        fees_delta.amount0.mag.try_into().unwrap(), fees_delta.amount1.mag.try_into().unwrap(),
+    );
+    assert_gt!(fees0_u256, 0);
+    assert_gt!(fees1_u256, 0);
+
+    let core = ekubo_core();
+    let pool_price: PoolPrice = core.get_pool_price(pool_key);
+    assert_gt!(pool_price.tick.mag, 0);
+    assert_eq!(pool_price.tick.sign, false);
+
+    let liquidity_prior: u128 = core.get_pool_liquidity(pool_key);
+    assert_gt!(liquidity_prior, 0);
+    let liquidity_factor_prior: u128 = lp.pool_liquidity_factor(pool_key);
+
+    let fees_per_liquidity_prior: FeesPerLiquidity = core.get_pool_fees_per_liquidity(pool_key);
+    let fees_per_liquidity_prior_value0_u256: u256 = fees_per_liquidity_prior
+        .value0
+        .try_into()
+        .unwrap();
+    let fees_per_liquidity_prior_value1_u256: u256 = fees_per_liquidity_prior
+        .value1
+        .try_into()
+        .unwrap();
+    assert_gt!(fees_per_liquidity_prior_value0_u256, 0);
+    assert_gt!(fees_per_liquidity_prior_value1_u256, 0);
+
+    let (reserves0_prior, reserves1_prior): (u128, u128) = lp.pool_reserves(pool_key);
+
+    // liquidity added to pool should be min between 0, 1 fees delta factoring out protocol fee rate
+    // @dev protocol fee rate is 50% of total swap fees
+    let protocol_fee_rate: u128 = 2;
+    let fees_delta_less_protocol: Delta = Delta {
+        amount0: i129 {
+            mag: fees_delta.amount0.mag - fees_delta.amount0.mag / protocol_fee_rate, sign: false,
+        },
+        amount1: i129 {
+            mag: fees_delta.amount1.mag - fees_delta.amount1.mag / protocol_fee_rate, sign: false,
+        },
+    };
+    let liquidity_factor_added0_u256: u256 = muldiv(
+        liquidity_factor_prior.try_into().unwrap(),
+        fees_delta_less_protocol.amount0.mag.try_into().unwrap(),
+        reserves0_prior.try_into().unwrap() - fees0_u256,
+    );
+    let liquidity_factor_added1_u256: u256 = muldiv(
+        liquidity_factor_prior.try_into().unwrap(),
+        fees_delta_less_protocol.amount1.mag.try_into().unwrap(),
+        reserves1_prior.try_into().unwrap() - fees1_u256,
+    );
+    let liquidity_factor_added: u128 = min(
+        liquidity_factor_added0_u256, liquidity_factor_added1_u256,
+    )
+        .try_into()
+        .unwrap();
+
+    let liquidity_factor_prior: u128 = lp.pool_liquidity_factor(pool_key);
+    let total_shares_prior: u256 = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
+        .total_supply();
+
+    // remove liquidity and check shares_added < factor input due to fee harvest
+    let step = *default_profile_params[2];
+    let n = *default_profile_params[3];
+    let shares_prior = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
+        .balance_of(get_contract_address());
+    let shares_removed = shares_prior / 2;
+
+    // cache balances of owner before to check protocol fees transferred
+    let owner = contract_address_const::<'new_owner'>();
+    let lp_owned: IOwnedDispatcher = IOwnedDispatcher { contract_address: lp.contract_address };
+    lp_owned.transfer_ownership(owner);
+
+    let owner_balance0_before: u256 = token0.balance_of(owner);
+    let owner_balance1_before: u256 = token1.balance_of(owner);
+
+    // add the liquidity
+    let factor = lp.remove_liquidity(pool_key, shares_removed);
+    let total_shares_after: u256 = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
+        .total_supply();
+    assert_eq!(total_shares_after, total_shares_prior - shares_removed);
+    assert_lt!(shares_removed, factor.try_into().unwrap()); // due to fees harvest
+
+    let liquidity_factor_after: u128 = lp.pool_liquidity_factor(pool_key);
+    assert_eq!(liquidity_factor_after + factor - liquidity_factor_prior, liquidity_factor_added);
+
+    // check shares burned
+    let shares_burned: u256 = muldiv(
+        total_shares_prior,
+        factor.try_into().unwrap(),
+        (liquidity_factor_prior + liquidity_factor_added).try_into().unwrap(),
+    );
+    assert_close(shares_burned, shares_removed, one() / 1000000);
+
+    // check pool reserves still match core balance of tokens
+    let (reserves0_after, reserves1_after) = lp.pool_reserves(pool_key);
+    assert_eq!(
+        reserves0_after, token0.balance_of(ekubo_core().contract_address).try_into().unwrap(),
+    );
+    assert_eq!(
+        reserves1_after, token1.balance_of(ekubo_core().contract_address).try_into().unwrap(),
+    );
+
+    // check protocol fees transferred to owner
+    let owner_balance0_after: u256 = token0.balance_of(owner);
+    let owner_balance1_after: u256 = token1.balance_of(owner);
+    let liquidity_factor_added_u256: u256 = liquidity_factor_added.try_into().unwrap();
+
+    if liquidity_factor_added0_u256 == liquidity_factor_added_u256 {
+        assert_close(
+            owner_balance0_after - owner_balance0_before,
+            fees0_u256 / protocol_fee_rate.try_into().unwrap(),
+            one() / 10000,
+        );
+        let fees1_u256_added = muldiv(
+            fees1_u256, liquidity_factor_added_u256, liquidity_factor_added1_u256,
+        );
+        assert_close(
+            owner_balance1_after - owner_balance1_before,
+            fees1_u256_added / protocol_fee_rate.try_into().unwrap(),
+            one() / 10000,
+        );
+    } else {
+        assert_close(
+            owner_balance1_after - owner_balance1_before,
+            fees1_u256 / protocol_fee_rate.try_into().unwrap(),
+            one() / 10000,
+        );
+        let fees0_u256_added = muldiv(
+            fees0_u256, liquidity_factor_added_u256, liquidity_factor_added0_u256,
+        );
+        assert_close(
+            owner_balance0_after - owner_balance0_before,
+            fees0_u256_added / protocol_fee_rate.try_into().unwrap(),
+            one() / 10000,
+        );
+    }
+
+    // check positions on pool have been updated
+    let initial_tick = i129 { mag: 0, sign: false };
+    let liquidity_factor_after_delta: i129 = i129 { mag: liquidity_factor_after, sign: false };
+    let liquidity_updates_after: Span<UpdatePositionParameters> = array![
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 1, sign: false } * step,
+                upper: initial_tick + i129 { mag: 1, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor_after_delta / i129 { mag: 1, sign: false },
+        },
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 2, sign: false } * step,
+                upper: initial_tick + i129 { mag: 2, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor_after_delta / i129 { mag: 2, sign: false },
+        },
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 3, sign: false } * step,
+                upper: initial_tick + i129 { mag: 3, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor_after_delta / i129 { mag: 3, sign: false },
+        },
+        UpdatePositionParameters {
+            salt: 0,
+            bounds: Bounds {
+                lower: initial_tick - i129 { mag: 4, sign: false } * step,
+                upper: initial_tick + i129 { mag: 4, sign: false } * step,
+            },
+            liquidity_delta: liquidity_factor_after_delta / i129 { mag: 4, sign: false },
+        },
+    ]
+        .span();
+
+    // check liquidity at expected profile ticks according to test profile
+    for update in liquidity_updates_after {
+        let position_key = PositionKey {
+            salt: 0, owner: lp.contract_address, bounds: *update.bounds,
+        };
+        let position = core.get_position(pool_key, position_key);
+        assert_close(
+            position.liquidity.try_into().unwrap(),
+            (*update.liquidity_delta.mag).try_into().unwrap(),
+            one() / 10000,
+        );
+    }
 }
