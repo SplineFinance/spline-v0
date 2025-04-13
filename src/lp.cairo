@@ -552,8 +552,6 @@ pub mod LiquidityProvider {
             self.update_reserves(pool_key, balance_delta - protocol_fees_delta);
 
             // settle up balance deltas with core
-            // TODO: check collected fees do *NOT* induce transfers and simply accounting deltas on
-            // core TODO: (so dont have to handle fees_delta outside of just protocol fees)
             handle_delta(core, pool_key.token0, balance_delta.amount0, caller);
             handle_delta(core, pool_key.token1, balance_delta.amount1, caller);
 
