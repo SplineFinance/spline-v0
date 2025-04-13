@@ -113,10 +113,25 @@ pub mod LiquidityProvider {
     #[event]
     #[derive(Drop, starknet::Event)]
     enum Event {
+        LiquidityUpdated: LiquidityUpdated,
         #[flat]
         UpgradeableEvent: UpgradeableComponent::Event,
         OwnedEvent: OwnedComponent::Event,
         SweepableEvent: SweepableComponent::Event,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    pub struct LiquidityUpdated {
+        #[key]
+        pub pool_key: PoolKey,
+        #[key]
+        pub sender: ContractAddress,
+        pub liquidity_factor: i129,
+        pub shares: u256,
+        pub amount0: i129,
+        pub amount1: i129,
+        pub protocol_fees0: u128,
+        pub protocol_fees1: u128,
     }
 
     #[abi(embed_v0)]
@@ -187,14 +202,15 @@ pub mod LiquidityProvider {
 
             // add initial liquidity to pool on ekubo core
             let caller = get_caller_address();
+            let shares = initial_liquidity_factor.try_into().unwrap();
             call_core_with_callback::<
-                (PoolKey, i129, i129, ContractAddress), (),
-            >(core, @(pool_key, liquidity_factor_delta, Zero::<i129>::zero(), caller));
+                (PoolKey, i129, i129, u256, ContractAddress), (),
+            >(core, @(pool_key, liquidity_factor_delta, Zero::<i129>::zero(), shares, caller));
 
             // lock initial minted lp tokens forever in this contract
             let pool_token = self.pool_tokens.read(pool_key);
             ILiquidityProviderTokenDispatcher { contract_address: pool_token }
-                .mint(get_contract_address(), initial_liquidity_factor.try_into().unwrap());
+                .mint(get_contract_address(), shares);
         }
 
         fn add_liquidity(ref self: ContractState, pool_key: PoolKey, factor: u128) -> u256 {
@@ -222,8 +238,8 @@ pub mod LiquidityProvider {
             let core = self.core.read();
             let caller = get_caller_address();
             call_core_with_callback::<
-                (PoolKey, i129, i129, ContractAddress), (),
-            >(core, @(pool_key, liquidity_factor_delta, liquidity_fees_delta, caller));
+                (PoolKey, i129, i129, u256, ContractAddress), (),
+            >(core, @(pool_key, liquidity_factor_delta, liquidity_fees_delta, shares, caller));
 
             // mint pool token shares to caller
             ILiquidityProviderTokenDispatcher { contract_address: pool_token }.mint(caller, shares);
@@ -260,8 +276,8 @@ pub mod LiquidityProvider {
             // obtain core lock. should also effectively lock this contract for unique pool key
             let core = self.core.read();
             call_core_with_callback::<
-                (PoolKey, i129, i129, ContractAddress), (),
-            >(core, @(pool_key, liquidity_factor_delta, liquidity_fees_delta, caller));
+                (PoolKey, i129, i129, u256, ContractAddress), (),
+            >(core, @(pool_key, liquidity_factor_delta, liquidity_fees_delta, shares, caller));
 
             factor
         }
@@ -537,9 +553,9 @@ pub mod LiquidityProvider {
     impl LockedImpl of ILocker<ContractState> {
         fn locked(ref self: ContractState, id: u32, data: Span<felt252>) -> Span<felt252> {
             let core = self.core.read();
-            let (pool_key, liquidity_factor_delta, liquidity_fees_delta, caller) =
+            let (pool_key, liquidity_factor_delta, liquidity_fees_delta, shares, caller) =
                 consume_callback_data::<
-                (PoolKey, i129, i129, ContractAddress),
+                (PoolKey, i129, i129, u256, ContractAddress),
             >(core, data);
 
             // harvest fees from core
@@ -559,6 +575,20 @@ pub mod LiquidityProvider {
             let owner = self.owned.get_owner();
             handle_delta(core, pool_key.token0, -protocol_fees_delta.amount0, owner);
             handle_delta(core, pool_key.token1, -protocol_fees_delta.amount1, owner);
+
+            self
+                .emit(
+                    LiquidityUpdated {
+                        pool_key,
+                        sender: caller,
+                        liquidity_factor: liquidity_factor_delta,
+                        shares: shares,
+                        amount0: balance_delta.amount0,
+                        amount1: balance_delta.amount1,
+                        protocol_fees0: protocol_fees_delta.amount0.mag,
+                        protocol_fees1: protocol_fees_delta.amount1.mag,
+                    },
+                );
 
             array![].span()
         }
