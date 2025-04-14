@@ -31,4 +31,4 @@ test = "snforge test"
 allow-prebuilt-plugins = ["snforge_std"]
 
 [workspace]
-members = ["scripts/create_pool"]
+members = ["scripts/create_pool", "scripts/execute_swap"]

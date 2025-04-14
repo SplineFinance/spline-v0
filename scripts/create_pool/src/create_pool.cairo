@@ -5,15 +5,17 @@ use sncast_std::{DeclareResultTrait, FeeSettingsTrait, call, declare, deploy, ge
 
 // The example below uses a contract deployed to the Sepolia testnet
 const LP_ADDRESS: felt252 = 0x02174812a3a8236077a9f13c5a420ec93ca5e8177e3952605155f5cb0f4ffe85;
-const TOKEN0_ADDRESS: felt252 = 0x03fe2b97c1fd336e750087d68b9b867997fd64a2661ff3ca5a7c771641e8e7ac; // TODO: replace
-const TOKEN1_ADDRESS: felt252 = 0x0577bddfccc35c714e99638d4f03ee6bc51e38895c7abc4df1b1e1ab4854b2ce; // TODO: replace
+const TOKEN0_ADDRESS: felt252 =
+    0x03fe2b97c1fd336e750087d68b9b867997fd64a2661ff3ca5a7c771641e8e7ac; // TODO: replace
+const TOKEN1_ADDRESS: felt252 =
+    0x0577bddfccc35c714e99638d4f03ee6bc51e38895c7abc4df1b1e1ab4854b2ce; // TODO: replace
 
 fn main() {
     let fee_settings = FeeSettingsTrait::max_fee(99999999999999999999);
     let pool_key = PoolKey {
         token0: TOKEN0_ADDRESS.try_into().unwrap(),
         token1: TOKEN1_ADDRESS.try_into().unwrap(),
-        fee: 68056473384187695954059273718202368, // 2 bps
+        fee: 34028236692093846346337460743176821, // 1 bps
         tick_spacing: 1,
         extension: LP_ADDRESS.try_into().unwrap(),
     };
@@ -24,7 +26,7 @@ fn main() {
         i129 { mag: 1000, sign: false },
         i129 { mag: 4, sign: false },
         i129 { mag: 0, sign: false },
-        i129 { mag: 10000, sign: false },
+        i129 { mag: 16000, sign: false },
         i129 { mag: 100000000, sign: false },
         i129 { mag: 0, sign: false },
         i129 { mag: 2000, sign: false },
