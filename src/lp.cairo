@@ -579,7 +579,7 @@ pub mod LiquidityProvider {
             self
                 .emit(
                     LiquidityUpdated {
-                        pool_key,
+                        pool_key: pool_key,
                         sender: caller,
                         liquidity_factor: liquidity_factor_delta,
                         shares: shares,

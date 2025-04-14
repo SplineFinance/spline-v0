@@ -13,7 +13,7 @@ fn main() {
     let pool_key = PoolKey {
         token0: TOKEN0_ADDRESS.try_into().unwrap(),
         token1: TOKEN1_ADDRESS.try_into().unwrap(),
-        fee: 0,
+        fee: 68056473384187695954059273718202368, // 2 bps
         tick_spacing: 1,
         extension: LP_ADDRESS.try_into().unwrap(),
     };
