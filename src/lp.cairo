@@ -112,7 +112,7 @@ pub mod LiquidityProvider {
 
     #[event]
     #[derive(Drop, starknet::Event)]
-    enum Event {
+    pub enum Event {
         LiquidityUpdated: LiquidityUpdated,
         #[flat]
         UpgradeableEvent: UpgradeableComponent::Event,

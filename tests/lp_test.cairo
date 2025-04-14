@@ -15,10 +15,12 @@ use ekubo::types::keys::{PoolKey, PositionKey};
 use ekubo::types::pool_price::PoolPrice;
 use openzeppelin_token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
 use snforge_std::{
-    ContractClass, ContractClassTrait, DeclareResultTrait, declare, start_cheat_caller_address,
-    stop_cheat_caller_address,
+    ContractClass, ContractClassTrait, DeclareResultTrait, EventSpyAssertionsTrait, declare,
+    spy_events, start_cheat_caller_address, stop_cheat_caller_address,
 };
-use spline_v0::lp::{ILiquidityProviderDispatcher, ILiquidityProviderDispatcherTrait};
+use spline_v0::lp::{
+    ILiquidityProviderDispatcher, ILiquidityProviderDispatcherTrait, LiquidityProvider,
+};
 use spline_v0::math::muldiv;
 use spline_v0::profile::{ILiquidityProfileDispatcher, ILiquidityProfileDispatcherTrait};
 use spline_v0::sweep::{ISweepableDispatcher, ISweepableDispatcherTrait};
@@ -486,6 +488,57 @@ fn test_create_and_initialize_pool_updates_pool_reserves() {
 
 #[test]
 #[fork("mainnet")]
+fn test_create_and_initialize_pool_emits_liquidity_updated_event() {
+    let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
+    let initial_tick = i129 { mag: 0, sign: false };
+
+    let initial_liquidity_factor = *default_profile_params[0];
+    let step = *default_profile_params[2];
+    let n = *default_profile_params[3];
+    let amount: u128 = (step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+
+    let core = ekubo_core();
+    let core_balance0 = token0.balance_of(core.contract_address);
+    let core_balance1 = token1.balance_of(core.contract_address);
+
+    let mut spy = spy_events();
+    lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
+
+    let amount0_delta = i129 {
+        mag: (token0.balance_of(core.contract_address) - core_balance0).try_into().unwrap(),
+        sign: false,
+    };
+    let amount1_delta = i129 {
+        mag: (token1.balance_of(core.contract_address) - core_balance1).try_into().unwrap(),
+        sign: false,
+    };
+
+    spy
+        .assert_emitted(
+            @array![
+                (
+                    lp.contract_address,
+                    LiquidityProvider::Event::LiquidityUpdated(
+                        LiquidityProvider::LiquidityUpdated {
+                            pool_key: pool_key,
+                            sender: get_contract_address(),
+                            liquidity_factor: initial_liquidity_factor,
+                            shares: initial_liquidity_factor.mag.into(),
+                            amount0: amount0_delta,
+                            amount1: amount1_delta,
+                            protocol_fees0: 0,
+                            protocol_fees1: 0,
+                        },
+                    ),
+                ),
+            ],
+        );
+}
+
+#[test]
+#[fork("mainnet")]
 #[should_panic(expected: ('OWNER_ONLY',))]
 fn test_create_and_initialize_pool_fails_if_not_owner() {
     let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
@@ -844,6 +897,54 @@ fn test_add_liquidity_updates_pool_reserves() {
 
 #[test]
 #[fork("mainnet")]
+fn test_add_liquidity_emits_liquidity_updated_event() {
+    let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup_add_liquidity();
+    let initial_liquidity_factor = lp.pool_liquidity_factor(pool_key);
+    assert_eq!(initial_liquidity_factor, 1000000000000000000);
+
+    let step = *default_profile_params[2];
+    let n = *default_profile_params[3];
+    let factor = 100000000000000000000; // 100 * 1e18
+    let amount: u128 = (step.mag * n.mag * (factor)) / (1900000);
+    token0.transfer(lp.contract_address, amount.into());
+    token1.transfer(lp.contract_address, amount.into());
+    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
+    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
+
+    let (reserves0, reserves1) = lp.pool_reserves(pool_key);
+
+    let mut spy = spy_events();
+    let shares = lp.add_liquidity(pool_key, factor);
+
+    let (reserve0_after, reserve1_after) = lp.pool_reserves(pool_key);
+    let liquidity_factor_delta = i129 { mag: factor, sign: false };
+    let amount0_delta = i129 { mag: reserve0_after - reserves0, sign: false };
+    let amount1_delta = i129 { mag: reserve1_after - reserves1, sign: false };
+
+    spy
+        .assert_emitted(
+            @array![
+                (
+                    lp.contract_address,
+                    LiquidityProvider::Event::LiquidityUpdated(
+                        LiquidityProvider::LiquidityUpdated {
+                            pool_key: pool_key,
+                            sender: get_contract_address(),
+                            liquidity_factor: liquidity_factor_delta,
+                            shares: shares,
+                            amount0: amount0_delta,
+                            amount1: amount1_delta,
+                            protocol_fees0: 0,
+                            protocol_fees1: 0,
+                        },
+                    ),
+                ),
+            ],
+        );
+}
+
+#[test]
+#[fork("mainnet")]
 #[should_panic(expected: ('Extension not this contract',))]
 fn test_add_liquidity_fails_if_extension_not_liquidity_provider() {
     let (_, lp, _, _, _, token0, token1) = setup_add_liquidity();
@@ -1123,6 +1224,46 @@ fn test_remove_liquidity_updates_pool_reserves() {
 
     assert_eq!(reserves0_after.into(), token0.balance_of(ekubo_core().contract_address));
     assert_eq!(reserves1_after.into(), token1.balance_of(ekubo_core().contract_address));
+}
+
+#[test]
+#[fork("mainnet")]
+fn test_remove_liquidity_emits_liquidity_updated_event() {
+    let (pool_key, lp, _, _, _, token0, token1) = setup_remove_liquidity();
+    let shares = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
+        .balance_of(get_contract_address());
+    let shares_removed = shares / 4;
+
+    let (reserves0_before, reserves1_before) = lp.pool_reserves(pool_key);
+
+    let mut spy = spy_events();
+    let factor = lp.remove_liquidity(pool_key, shares_removed);
+
+    let (reserve0_after, reserve1_after) = lp.pool_reserves(pool_key);
+    let liquidity_factor_delta = i129 { mag: factor, sign: true };
+    let amount0_delta = i129 { mag: reserves0_before - reserve0_after, sign: true };
+    let amount1_delta = i129 { mag: reserves1_before - reserve1_after, sign: true };
+
+    spy
+        .assert_emitted(
+            @array![
+                (
+                    lp.contract_address,
+                    LiquidityProvider::Event::LiquidityUpdated(
+                        LiquidityProvider::LiquidityUpdated {
+                            pool_key: pool_key,
+                            sender: get_contract_address(),
+                            liquidity_factor: liquidity_factor_delta,
+                            shares: shares_removed,
+                            amount0: amount0_delta,
+                            amount1: amount1_delta,
+                            protocol_fees0: 0,
+                            protocol_fees1: 0,
+                        },
+                    ),
+                ),
+            ],
+        );
 }
 
 #[test]
