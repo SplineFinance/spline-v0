@@ -10,8 +10,8 @@ pub trait ITestWrappedToken<TStorage> {
 #[starknet::contract]
 pub mod TestWrappedToken {
     use openzeppelin_token::erc20::interface::{
-        IERC20, IERC20Dispatcher, IERC20DispatcherTrait, IERC20Metadata, IERC20MetadataDispatcher,
-        IERC20MetadataDispatcherTrait,
+        IERC20, IERC20CamelOnly, IERC20Dispatcher, IERC20DispatcherTrait, IERC20Metadata,
+        IERC20MetadataDispatcher, IERC20MetadataDispatcherTrait,
     };
     use openzeppelin_token::erc20::{ERC20Component, ERC20HooksEmptyImpl};
     use starknet::storage::{
@@ -40,14 +40,10 @@ pub mod TestWrappedToken {
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, underlying: IERC20MetadataDispatcher) {
-        let name = "Wrapped " + underlying.name();
-        let symbol = "W" + underlying.symbol();
-        let decimals = underlying.decimals();
-
-        self.erc20.initializer(name, symbol);
-        self.decimals.write(decimals);
-        self.underlying.write(IERC20Dispatcher { contract_address: underlying.contract_address });
+    fn constructor(ref self: ContractState, underlying: IERC20Dispatcher) {
+        self.erc20.initializer("Wrapped Wrapped BTC", "WWBTC");
+        self.decimals.write(8);
+        self.underlying.write(underlying);
     }
 
     #[abi(embed_v0)]
@@ -156,6 +152,26 @@ pub mod TestWrappedToken {
         /// Returns the number of decimals used to get its user representation.
         fn decimals(self: @ContractState) -> u8 {
             self.decimals.read()
+        }
+    }
+
+    #[abi(embed_v0)]
+    impl ERC20CamelOnly of IERC20CamelOnly<ContractState> {
+        fn totalSupply(self: @ContractState) -> u256 {
+            ERC20::total_supply(self)
+        }
+
+        fn balanceOf(self: @ContractState, account: ContractAddress) -> u256 {
+            ERC20::balance_of(self, account)
+        }
+
+        fn transferFrom(
+            ref self: ContractState,
+            sender: ContractAddress,
+            recipient: ContractAddress,
+            amount: u256,
+        ) -> bool {
+            ERC20::transfer_from(ref self, sender, recipient, amount)
         }
     }
 }
