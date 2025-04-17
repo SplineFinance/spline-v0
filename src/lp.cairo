@@ -37,6 +37,12 @@ pub trait ILiquidityProvider<TStorage> {
     // returns the current reserves added by liquidity provider for pool with ekubo key `pool_key`,
     // including fees accumulated on pool
     fn pool_reserves(self: @TStorage, pool_key: ekubo::types::keys::PoolKey) -> (u128, u128);
+
+    /// returns the minimum liquidity factor for pool with ekubo key `pool_key` for pool price at
+    /// given tick
+    fn pool_minimum_liquidity_factor(
+        self: @TStorage, pool_key: ekubo::types::keys::PoolKey, tick: ekubo::types::i129::i129,
+    ) -> u128;
 }
 
 #[starknet::contract]
@@ -224,6 +230,8 @@ pub mod LiquidityProvider {
 
             // calculate shares to mint
             let liquidity_factor_delta = i129 { mag: factor, sign: false };
+            self.check_liquidity_factor_delta(pool_key, liquidity_factor_delta);
+
             let liquidity_fees_delta = i129 { mag: liquidity_fees, sign: false };
             let pool_token = self.pool_tokens.read(pool_key);
             let total_shares = IERC20Dispatcher { contract_address: pool_token }.total_supply();
@@ -264,6 +272,7 @@ pub mod LiquidityProvider {
             let factor = self
                 .calculate_factor(liquidity_factor + liquidity_fees, shares, total_shares);
             let liquidity_factor_delta = i129 { mag: factor, sign: true };
+            self.check_liquidity_factor_delta(pool_key, liquidity_factor_delta);
             let liquidity_fees_delta = i129 { mag: liquidity_fees, sign: false };
 
             // remove amount from liquidity factor in storage
@@ -303,6 +312,13 @@ pub mod LiquidityProvider {
         fn pool_reserves(self: @ContractState, pool_key: PoolKey) -> (u128, u128) {
             self.pool_reserves.read(pool_key)
         }
+
+        fn pool_minimum_liquidity_factor(
+            self: @ContractState, pool_key: PoolKey, tick: i129,
+        ) -> u128 {
+            let profile = self.profile();
+            profile.initial_liquidity_factor(pool_key, tick)
+        }
     }
 
     #[generate_trait]
@@ -322,6 +338,17 @@ pub mod LiquidityProvider {
             assert(
                 self.pool_tokens.read(pool_key) == Zero::<ContractAddress>::zero(),
                 'Pool token already deployed',
+            );
+        }
+
+        fn check_liquidity_factor_delta(
+            self: @ContractState, pool_key: PoolKey, liquidity_factor_delta: i129,
+        ) {
+            let pool_price = self.core().get_pool_price(pool_key);
+            let min_liquidity_factor = self
+                .pool_minimum_liquidity_factor(pool_key, pool_price.tick);
+            assert(
+                liquidity_factor_delta.mag >= min_liquidity_factor, 'Liq factor delta mag < min',
             );
         }
 
@@ -361,6 +388,7 @@ pub mod LiquidityProvider {
             let mut delta = Zero::<Delta>::zero();
             // @dev length of returned array can cause gas cost to be high, so be careful with this
             for params in liquidity_update_params {
+                assert(*params.liquidity_delta.mag > 0, 'Liquidity delta update is 0');
                 delta += core.update_position(pool_key, *params);
             }
             return delta;
@@ -416,7 +444,7 @@ pub mod LiquidityProvider {
 
             // get min liquidity from profile
             let pool_price: PoolPrice = core.get_pool_price(pool_key);
-            let min_liquidity_fees = profile.initial_liquidity_factor(pool_key, pool_price.tick);
+            let min_liquidity_fees = self.pool_minimum_liquidity_factor(pool_key, pool_price.tick);
 
             let mut delta = Zero::<Delta>::zero();
             for params in liquidity_update_params {

@@ -78,5 +78,6 @@ fn setup() -> (
 #[fork("mainnet")]
 fn test_debug_harvest_fees() {
     let (pool_key, _, lp, _, _) = setup();
+    // TODO: fix so passes
     lp.add_liquidity(pool_key, 0);
 }
