@@ -59,6 +59,7 @@ pub mod LiquidityProvider {
     use ekubo::types::delta::Delta;
     use ekubo::types::i129::i129;
     use ekubo::types::keys::{PoolKey, PositionKey};
+    use ekubo::types::pool_price::PoolPrice;
     use openzeppelin_token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
     use openzeppelin_utils::interfaces::{
         IUniversalDeployerDispatcher, IUniversalDeployerDispatcherTrait,
@@ -194,6 +195,7 @@ pub mod LiquidityProvider {
             core.initialize_pool(pool_key, initial_tick);
 
             // initial tick is tick want to center liquidity around
+            // @dev initial liquidity also sets harvest fees dust limit to avoid rounding issues
             let initial_liquidity_factor = profile.initial_liquidity_factor(pool_key, initial_tick);
             let liquidity_factor_delta = i129 { mag: initial_liquidity_factor, sign: false };
 
@@ -412,6 +414,10 @@ pub mod LiquidityProvider {
             let liquidity_update_params = profile
                 .get_liquidity_updates(pool_key, Zero::<i129>::zero());
 
+            // get min liquidity from profile
+            let pool_price: PoolPrice = core.get_pool_price(pool_key);
+            let min_liquidity_fees = profile.initial_liquidity_factor(pool_key, pool_price.tick);
+
             let mut delta = Zero::<Delta>::zero();
             for params in liquidity_update_params {
                 let position_key = PositionKey {
@@ -455,6 +461,9 @@ pub mod LiquidityProvider {
                     pool_reserve1_less_fees.try_into().unwrap(),
                 );
             let liquidity_fees: u128 = min(liquidity_fees0, liquidity_fees1);
+            if (liquidity_fees < min_liquidity_fees) {
+                return 0;
+            }
 
             liquidity_fees
         }
@@ -493,6 +502,7 @@ pub mod LiquidityProvider {
 
             // TODO: check protocol fee denom >= 2 there are no edge cases where dont have excess
             // TODO: need this to never revert due to a rounding issue (maybe min harvest liquidity)
+            // TODO: fix rounding issues for small fee liquidity delta?
             let mut excess_fees_delta = collected_fees_delta + fees_delta;
             assert(
                 excess_fees_delta.amount0 <= Zero::<i129>::zero(),
