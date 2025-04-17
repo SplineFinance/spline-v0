@@ -19,7 +19,7 @@ assert_macros = "2.11.2"
 [[tool.snforge.fork]]
 name = "mainnet"
 url = "https://rpc.starknet.lava.build:443"
-block_id.number = "1280000"
+block_id.number = "1322731"
 
 [[target.starknet-contract]]
 sierra = true
