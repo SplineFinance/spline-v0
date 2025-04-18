@@ -116,6 +116,9 @@ fn test_debug_add_then_remove_liquidity() {
     assert_eq!(token0.balance_of(get_contract_address()), 500000000);
     assert_eq!(token1.balance_of(get_contract_address()), 500000000);
 
+    // get pool reserves prior
+    let (reserve0, reserve1) = lp.pool_reserves(pool_key);
+
     // cache balances to compare with after add -> remove
     let token0_balance = token0.balance_of(get_contract_address());
     let token1_balance = token1.balance_of(get_contract_address());
@@ -135,6 +138,10 @@ fn test_debug_add_then_remove_liquidity() {
     let token0_balance_after_add = token0.balance_of(get_contract_address());
     let token1_balance_after_add = token1.balance_of(get_contract_address());
 
+    let (reserve0_after_add, reserve1_after_add) = lp.pool_reserves(pool_key);
+    assert_close(reserve0_after_add.into(), reserve0.into() + amount0_add.into(), one() / 10000);
+    assert_close(reserve1_after_add.into(), reserve1.into() + amount1_add.into(), one() / 10000);
+
     let liquidity_factor_burned = lp.remove_liquidity(pool_key, shares);
     assert_eq!(liquidity_factor_minted, liquidity_factor_burned + 1);
 
@@ -146,4 +153,9 @@ fn test_debug_add_then_remove_liquidity() {
     // protocol fee looks like same as swap fee of 1 bps so total of 2 bps lost
     assert_close(amount0_remove, (amount0_add * 9998) / 10000, one() / 10000);
     assert_close(amount1_remove, (amount1_add * 9998) / 10000, one() / 10000);
+
+    // check pool reserves after is same as before less amount removed
+    let (reserve0_after, reserve1_after) = lp.pool_reserves(pool_key);
+    assert_close(reserve0_after.into(), reserve0.into(), one() / 10000);
+    assert_close(reserve1_after.into(), reserve1.into(), one() / 10000);
 }

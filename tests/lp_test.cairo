@@ -152,7 +152,7 @@ fn test_constructor_sets_callpoints() {
             before_initialize_pool: true,
             after_initialize_pool: false,
             before_swap: false,
-            after_swap: true,
+            after_swap: false,
             before_update_position: true,
             after_update_position: false,
             before_collect_fees: false,
@@ -479,9 +479,10 @@ fn test_create_and_initialize_pool_updates_pool_reserves() {
     let amount1_transferred: u256 = amount.into() - balance1;
 
     let (reserves0_after, reserves1_after) = lp.pool_reserves(pool_key);
-    assert_eq!(reserves0_after.into(), reserves0.into() + amount0_transferred);
-    assert_eq!(reserves1_after.into(), reserves1.into() + amount1_transferred);
+    assert_close(reserves0_after.into(), reserves0.into() + amount0_transferred, one() / 1000000);
+    assert_close(reserves1_after.into(), reserves1.into() + amount1_transferred, one() / 1000000);
 
+    // same given no swaps yet
     assert_eq!(reserves0_after.into(), token0.balance_of(ekubo_core().contract_address));
     assert_eq!(reserves1_after.into(), token1.balance_of(ekubo_core().contract_address));
 }
@@ -888,11 +889,8 @@ fn test_add_liquidity_updates_pool_reserves() {
     let amount1_transferred: u256 = amount.into() - balance1;
 
     let (reserves0_after, reserves1_after) = lp.pool_reserves(pool_key);
-    assert_eq!(reserves0_after.into(), reserves0.into() + amount0_transferred);
-    assert_eq!(reserves1_after.into(), reserves1.into() + amount1_transferred);
-
-    assert_eq!(reserves0_after.into(), token0.balance_of(ekubo_core().contract_address));
-    assert_eq!(reserves1_after.into(), token1.balance_of(ekubo_core().contract_address));
+    assert_close(reserves0_after.into(), reserves0.into() + amount0_transferred, one() / 1000000);
+    assert_close(reserves1_after.into(), reserves1.into() + amount1_transferred, one() / 1000000);
 }
 
 #[test]
@@ -1219,11 +1217,14 @@ fn test_remove_liquidity_updates_pool_reserves() {
     let amount1_transferred: u256 = ekubo_balance1_before - ekubo_balance1_after;
 
     let (reserves0_after, reserves1_after) = lp.pool_reserves(pool_key);
-    assert_eq!(reserves0_after.into(), reserves0_before.into() - amount0_transferred);
-    assert_eq!(reserves1_after.into(), reserves1_before.into() - amount1_transferred);
 
-    assert_eq!(reserves0_after.into(), token0.balance_of(ekubo_core().contract_address));
-    assert_eq!(reserves1_after.into(), token1.balance_of(ekubo_core().contract_address));
+    // TODO: factor in swap and protocol fee charged on remove liquidity
+    assert_close(
+        reserves0_after.into(), reserves0_before.into() - amount0_transferred, 2 * one() / 10000,
+    );
+    assert_close(
+        reserves1_after.into(), reserves1_before.into() - amount1_transferred, 2 * one() / 10000,
+    );
 }
 
 #[test]
@@ -1317,6 +1318,7 @@ fn test_after_swap_updates_pool_reserves() {
         },
     );
 
+    // TODO: factor out swap fee
     let expected_reserves0: u128 = (i129 { mag: reserves0_before, sign: false }
         + swap_delta.amount0)
         .mag;
@@ -1353,6 +1355,10 @@ fn calculate_fees_on_pool(
 
 fn one() -> u256 {
     1000000000000000000 // one == 1e18
+}
+
+fn two_pow_128() -> u256 {
+    340282366920938463463374607431768211456 // 2**128
 }
 
 fn assert_close(a: u256, b: u256, tol: u256) {

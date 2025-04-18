@@ -34,8 +34,8 @@ pub trait ILiquidityProvider<TStorage> {
     // returns the current liquidity factor for pool with ekubo key `pool_key`
     fn pool_liquidity_factor(self: @TStorage, pool_key: ekubo::types::keys::PoolKey) -> u128;
 
-    // returns the current reserves added by liquidity provider for pool with ekubo key `pool_key`,
-    // including fees accumulated on pool
+    // returns the current reserves available for swaps on pool with ekubo key `pool_key`,
+    // excludes fees accumulated on pool
     fn pool_reserves(self: @TStorage, pool_key: ekubo::types::keys::PoolKey) -> (u128, u128);
 
     /// returns the minimum liquidity factor for pool with ekubo key `pool_key` for pool price at
@@ -59,6 +59,9 @@ pub mod LiquidityProvider {
     use ekubo::interfaces::core::{
         ICoreDispatcher, ICoreDispatcherTrait, IExtension, ILocker, SwapParameters,
         UpdatePositionParameters,
+    };
+    use ekubo::interfaces::mathlib::{
+        IMathLibDispatcher, IMathLibDispatcherTrait, dispatcher as math_lib_dispatcher,
     };
     use ekubo::types::bounds::Bounds;
     use ekubo::types::call_points::CallPoints;
@@ -105,7 +108,7 @@ pub mod LiquidityProvider {
     struct Storage {
         core: ICoreDispatcher,
         profile: ILiquidityProfileDispatcher,
-        pool_reserves: Map<PoolKey, (u128, u128)>,
+        pool_reserves: Map<PoolKey, (u128, u128)>, // TODO: remove for new deploys after upgrade
         pool_liquidity_factors: Map<PoolKey, u128>,
         pool_tokens: Map<PoolKey, ContractAddress>,
         pool_token_class_hash: ClassHash,
@@ -167,7 +170,7 @@ pub mod LiquidityProvider {
                     before_initialize_pool: true,
                     after_initialize_pool: false,
                     before_swap: false,
-                    after_swap: true,
+                    after_swap: false,
                     before_update_position: true,
                     after_update_position: false,
                     before_collect_fees: false,
@@ -310,7 +313,30 @@ pub mod LiquidityProvider {
         }
 
         fn pool_reserves(self: @ContractState, pool_key: PoolKey) -> (u128, u128) {
-            self.pool_reserves.read(pool_key)
+            let core = self.core.read();
+            let pool_price = core.get_pool_price(pool_key);
+            let math_lib = math_lib_dispatcher();
+            let profile = self.profile.read();
+            let liquidity_update_params = profile
+                .get_liquidity_updates(pool_key, Zero::<i129>::zero());
+
+            let mut delta: Delta = Zero::<Delta>::zero();
+            for params in liquidity_update_params {
+                let position_key = PositionKey {
+                    salt: (*params.salt).try_into().unwrap(), // @dev salt must fit within u64
+                    owner: get_contract_address(),
+                    bounds: *params.bounds,
+                };
+                let position = core.get_position(pool_key, position_key);
+                delta += math_lib
+                    .liquidity_delta_to_amount_delta(
+                        pool_price.sqrt_ratio,
+                        i129 { mag: position.liquidity, sign: false },
+                        math_lib.tick_to_sqrt_ratio(*params.bounds.lower),
+                        math_lib.tick_to_sqrt_ratio(*params.bounds.upper),
+                    );
+            }
+            (delta.amount0.mag, delta.amount1.mag)
         }
 
         fn pool_minimum_liquidity_factor(
@@ -344,7 +370,8 @@ pub mod LiquidityProvider {
         fn check_liquidity_factor_delta(
             self: @ContractState, pool_key: PoolKey, liquidity_factor_delta: i129,
         ) {
-            let pool_price = self.core().get_pool_price(pool_key);
+            let core = self.core.read();
+            let pool_price = core.get_pool_price(pool_key);
             let min_liquidity_factor = self
                 .pool_minimum_liquidity_factor(pool_key, pool_price.tick);
             assert(
@@ -392,20 +419,6 @@ pub mod LiquidityProvider {
                 delta += core.update_position(pool_key, *params);
             }
             return delta;
-        }
-
-        fn update_reserves(ref self: ContractState, pool_key: PoolKey, delta: Delta) {
-            // update reserves in pool
-            let (pool_reserve0, pool_reserve1) = self.pool_reserves.read(pool_key);
-            let reserve_delta = Delta {
-                amount0: i129 { mag: pool_reserve0, sign: false },
-                amount1: i129 { mag: pool_reserve1, sign: false },
-            };
-
-            let new_reserve_delta = reserve_delta + delta;
-            self
-                .pool_reserves
-                .write(pool_key, (new_reserve_delta.amount0.mag, new_reserve_delta.amount1.mag));
         }
 
         /// Calculates amount of shares to mint based on factor and total factor
@@ -460,12 +473,9 @@ pub mod LiquidityProvider {
 
             // get min of liquidity factors could generate from fee collection
             let liquidity_factor: u128 = self.pool_liquidity_factors.read(pool_key);
-            // @dev pool reserves *include* accumulated fees so factor them out
-            let (pool_reserve0, pool_reserve1): (u128, u128) = self.pool_reserves.read(pool_key);
-            let (pool_reserve0_less_fees, pool_reserve1_less_fees) = (
-                pool_reserve0 - delta.amount0.mag, pool_reserve1 - delta.amount1.mag,
-            );
-            if pool_reserve0_less_fees == 0 || pool_reserve1_less_fees == 0 {
+            // @dev pool reserves exclude accumulated swap, protocol fees
+            let (pool_reserve0, pool_reserve1): (u128, u128) = self.pool_reserves(pool_key);
+            if pool_reserve0 == 0 || pool_reserve1 == 0 {
                 return 0;
             }
 
@@ -480,13 +490,13 @@ pub mod LiquidityProvider {
                 .calculate_factor(
                     liquidity_factor,
                     delta.amount0.mag.try_into().unwrap(),
-                    pool_reserve0_less_fees.try_into().unwrap(),
+                    pool_reserve0.try_into().unwrap(),
                 );
             let liquidity_fees1: u128 = self
                 .calculate_factor(
                     liquidity_factor,
                     delta.amount1.mag.try_into().unwrap(),
-                    pool_reserve1_less_fees.try_into().unwrap(),
+                    pool_reserve1.try_into().unwrap(),
                 );
             let liquidity_fees: u128 = min(liquidity_fees0, liquidity_fees1);
             if (liquidity_fees < min_liquidity_fees) {
@@ -602,9 +612,6 @@ pub mod LiquidityProvider {
             // modify liquidity profile positions on ekubo core
             let balance_delta = self.update_positions(pool_key, liquidity_factor_delta);
 
-            // update tracked reserves in storage
-            self.update_reserves(pool_key, balance_delta - protocol_fees_delta);
-
             // settle up balance deltas with core
             handle_delta(core, pool_key.token0, balance_delta.amount0, caller);
             handle_delta(core, pool_key.token1, balance_delta.amount1, caller);
@@ -662,9 +669,7 @@ pub mod LiquidityProvider {
             params: SwapParameters,
             delta: Delta,
         ) {
-            let core = self.core.read();
-            check_caller_is_core(core);
-            self.update_reserves(pool_key, delta);
+            panic!("Not used");
         }
 
         fn before_update_position(
