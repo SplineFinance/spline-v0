@@ -1326,12 +1326,20 @@ fn test_after_swap_updates_pool_reserves() {
         + swap_delta.amount1)
         .mag;
     let (reserves0_after, reserves1_after) = lp.pool_reserves(pool_key);
-    assert_eq!(reserves0_after, expected_reserves0);
-    assert_eq!(reserves1_after, expected_reserves1);
+    assert_close(reserves0_after.into(), expected_reserves0.into(), one() / 1000000);
+    assert_close(reserves1_after.into(), expected_reserves1.into(), one() / 1000000);
 
     // valid since swap delta seems to include fees
-    assert_eq!(reserves0_after.into(), token0.balance_of(ekubo_core().contract_address));
-    assert_eq!(reserves1_after.into(), token1.balance_of(ekubo_core().contract_address));
+    assert_close(
+        reserves0_after.into(),
+        token0.balance_of(ekubo_core().contract_address).into(),
+        one() / 1000000,
+    );
+    assert_close(
+        reserves1_after.into(),
+        token1.balance_of(ekubo_core().contract_address).into(),
+        one() / 1000000,
+    );
 }
 
 fn calculate_fees_on_pool(

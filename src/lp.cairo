@@ -108,7 +108,6 @@ pub mod LiquidityProvider {
     struct Storage {
         core: ICoreDispatcher,
         profile: ILiquidityProfileDispatcher,
-        pool_reserves: Map<PoolKey, (u128, u128)>, // TODO: remove for new deploys after upgrade
         pool_liquidity_factors: Map<PoolKey, u128>,
         pool_tokens: Map<PoolKey, ContractAddress>,
         pool_token_class_hash: ClassHash,
