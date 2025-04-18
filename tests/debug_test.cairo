@@ -8,6 +8,11 @@ use snforge_std::{
     spy_events, start_cheat_caller_address, stop_cheat_caller_address,
 };
 use spline_v0::lp::{ILiquidityProviderDispatcher, ILiquidityProviderDispatcherTrait};
+use spline_v0::math::muldiv;
+use spline_v0::sweep::{ISweepableDispatcher, ISweepableDispatcherTrait};
+use spline_v0::test::test_wrapped_token::{
+    ITestWrappedTokenDispatcher, ITestWrappedTokenDispatcherTrait,
+};
 use starknet::{ClassHash, ContractAddress, contract_address_const, get_contract_address};
 
 fn ekubo_core() -> ICoreDispatcher {
@@ -46,6 +51,10 @@ fn owner() -> ContractAddress {
     IOwnedDispatcher { contract_address: spline_v0_lp().contract_address }.get_owner()
 }
 
+fn whale() -> ContractAddress {
+    contract_address_const::<0x0324a36c6d2a8ac2e90a1112499beb0d4ee900768ed9eda22b6906a3a0cb205c>()
+}
+
 fn pool_key() -> PoolKey {
     PoolKey {
         token0: token0().contract_address,
@@ -71,13 +80,70 @@ fn setup() -> (
         .replace_class_hash(*declare("LiquidityProvider").unwrap().contract_class().class_hash);
     stop_cheat_caller_address(lp.contract_address);
 
+    // send some funds from whale to this address
+    start_cheat_caller_address(token0.contract_address, whale());
+    token0.transfer(get_contract_address(), 500000000);
+    token0.transfer(token1.contract_address, 500000000);
+    stop_cheat_caller_address(token0.contract_address);
+
+    // mint some wrapped tokens
+    ITestWrappedTokenDispatcher { contract_address: token1.contract_address }.mint(500000000);
+
     (pool_key, core, lp, token0, token1)
+}
+
+fn one() -> u256 {
+    1000000000000000000 // one == 1e18
+}
+
+fn assert_close(a: u256, b: u256, tol: u256) {
+    let (mi, ma): (u256, u256) = if a > b {
+        (b, a)
+    } else {
+        (a, b)
+    };
+    assert_lt!(muldiv(ma - mi, one(), mi), tol);
 }
 
 #[test]
 #[fork("mainnet")]
-fn test_debug_harvest_fees() {
-    let (pool_key, _, lp, _, _) = setup();
-    // TODO: fix so passes
-    lp.add_liquidity(pool_key, 0);
+fn test_debug_add_then_remove_liquidity() {
+    let (pool_key, _, lp, token0, token1) = setup();
+    let liquidity_factor_minted = 1000000000000;
+    let amount0 = 100000000;
+    let amount1 = 100000000;
+
+    assert_eq!(token0.balance_of(get_contract_address()), 500000000);
+    assert_eq!(token1.balance_of(get_contract_address()), 500000000);
+
+    // cache balances to compare with after add -> remove
+    let token0_balance = token0.balance_of(get_contract_address());
+    let token1_balance = token1.balance_of(get_contract_address());
+
+    token0.transfer(lp.contract_address, amount0);
+    token1.transfer(lp.contract_address, amount1);
+
+    let shares = lp.add_liquidity(pool_key, liquidity_factor_minted);
+    ISweepableDispatcher { contract_address: lp.contract_address }
+        .sweep(token0.contract_address, get_contract_address(), 0);
+    ISweepableDispatcher { contract_address: lp.contract_address }
+        .sweep(token1.contract_address, get_contract_address(), 0);
+
+    let amount0_add = token0_balance - token0.balance_of(get_contract_address());
+    let amount1_add = token1_balance - token1.balance_of(get_contract_address());
+
+    let token0_balance_after_add = token0.balance_of(get_contract_address());
+    let token1_balance_after_add = token1.balance_of(get_contract_address());
+
+    let liquidity_factor_burned = lp.remove_liquidity(pool_key, shares);
+    assert_eq!(liquidity_factor_minted, liquidity_factor_burned + 1);
+
+    // check balances are back to original less fees
+    let amount0_remove = token0.balance_of(get_contract_address()) - token0_balance_after_add;
+    let amount1_remove = token1.balance_of(get_contract_address()) - token1_balance_after_add;
+
+    // Q: how much is the protocol fee charged by ekubo?
+    // protocol fee looks like same as swap fee of 1 bps so total of 2 bps lost
+    assert_close(amount0_remove, (amount0_add * 9998) / 10000, one() / 10000);
+    assert_close(amount1_remove, (amount1_add * 9998) / 10000, one() / 10000);
 }
