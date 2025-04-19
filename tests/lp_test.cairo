@@ -920,8 +920,12 @@ fn test_add_liquidity_emits_liquidity_updated_event() {
     let balance1_after = token1.balance_of(core.contract_address);
 
     let liquidity_factor_delta = i129 { mag: factor, sign: false };
-    let amount0_delta = i129 { mag: (balance0_after - balance0_before).try_into().unwrap(), sign: false };
-    let amount1_delta = i129 { mag: (balance1_after - balance1_before).try_into().unwrap(), sign: false };
+    let amount0_delta = i129 {
+        mag: (balance0_after - balance0_before).try_into().unwrap(), sign: false,
+    };
+    let amount1_delta = i129 {
+        mag: (balance1_after - balance1_before).try_into().unwrap(), sign: false,
+    };
 
     spy
         .assert_emitted(
@@ -1250,8 +1254,12 @@ fn test_remove_liquidity_emits_liquidity_updated_event() {
     let balance1_after = token1.balance_of(core.contract_address);
 
     let liquidity_factor_delta = i129 { mag: factor, sign: true };
-    let amount0_delta = i129 { mag: (balance0_before - balance0_after).try_into().unwrap(), sign: true };
-    let amount1_delta = i129 { mag: (balance1_before - balance1_after).try_into().unwrap(), sign: true };
+    let amount0_delta = i129 {
+        mag: (balance0_before - balance0_after).try_into().unwrap(), sign: true,
+    };
+    let amount1_delta = i129 {
+        mag: (balance1_before - balance1_after).try_into().unwrap(), sign: true,
+    };
 
     spy
         .assert_emitted(
