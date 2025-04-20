@@ -112,112 +112,112 @@ fn updates(pool_key: PoolKey, sign: bool) -> Span<UpdatePositionParameters> {
         UpdatePositionParameters {
             salt: 0,
             bounds: Bounds {
-                lower: i129 { mag: 8000, sign: true }, upper: i129 { mag: 8000, sign: false },
+                lower: i129 { mag: 8000, sign: true }, upper: i129 { mag: 8001, sign: false },
             },
             liquidity_delta: i129 { mag: 9362055475993, sign: sign },
         },
         UpdatePositionParameters {
             salt: 0,
             bounds: Bounds {
-                lower: i129 { mag: 7000, sign: true }, upper: i129 { mag: 7000, sign: false },
+                lower: i129 { mag: 7000, sign: true }, upper: i129 { mag: 7001, sign: false },
             },
             liquidity_delta: i129 { mag: 2649638342263, sign: sign },
         },
         UpdatePositionParameters {
             salt: 0,
             bounds: Bounds {
-                lower: i129 { mag: 6000, sign: true }, upper: i129 { mag: 6000, sign: false },
+                lower: i129 { mag: 6000, sign: true }, upper: i129 { mag: 6001, sign: false },
             },
             liquidity_delta: i129 { mag: 3903800490933, sign: sign },
         },
         UpdatePositionParameters {
             salt: 0,
             bounds: Bounds {
-                lower: i129 { mag: 5000, sign: true }, upper: i129 { mag: 5000, sign: false },
+                lower: i129 { mag: 5000, sign: true }, upper: i129 { mag: 5001, sign: false },
             },
             liquidity_delta: i129 { mag: 6036911634520, sign: sign },
         },
         UpdatePositionParameters {
             salt: 0,
             bounds: Bounds {
-                lower: i129 { mag: 4000, sign: true }, upper: i129 { mag: 4000, sign: false },
+                lower: i129 { mag: 4000, sign: true }, upper: i129 { mag: 4001, sign: false },
             },
             liquidity_delta: i129 { mag: 9878582674670, sign: sign },
         },
         UpdatePositionParameters {
             salt: 0,
             bounds: Bounds {
-                lower: i129 { mag: 3500, sign: true }, upper: i129 { mag: 3500, sign: false },
+                lower: i129 { mag: 3500, sign: true }, upper: i129 { mag: 3501, sign: false },
             },
             liquidity_delta: i129 { mag: 7345612758087, sign: sign },
         },
         UpdatePositionParameters {
             salt: 0,
             bounds: Bounds {
-                lower: i129 { mag: 3000, sign: true }, upper: i129 { mag: 3000, sign: false },
+                lower: i129 { mag: 3000, sign: true }, upper: i129 { mag: 3001, sign: false },
             },
             liquidity_delta: i129 { mag: 9794150344117, sign: sign },
         },
         UpdatePositionParameters {
             salt: 0,
             bounds: Bounds {
-                lower: i129 { mag: 2500, sign: true }, upper: i129 { mag: 2500, sign: false },
+                lower: i129 { mag: 2500, sign: true }, upper: i129 { mag: 2501, sign: false },
             },
             liquidity_delta: i129 { mag: 13138494364059, sign: sign },
         },
         UpdatePositionParameters {
             salt: 0,
             bounds: Bounds {
-                lower: i129 { mag: 2000, sign: true }, upper: i129 { mag: 2000, sign: false },
+                lower: i129 { mag: 2000, sign: true }, upper: i129 { mag: 2001, sign: false },
             },
             liquidity_delta: i129 { mag: 17468225461305, sign: sign },
         },
         UpdatePositionParameters {
             salt: 0,
             bounds: Bounds {
-                lower: i129 { mag: 1750, sign: true }, upper: i129 { mag: 1750, sign: false },
+                lower: i129 { mag: 1750, sign: true }, upper: i129 { mag: 1751, sign: false },
             },
             liquidity_delta: i129 { mag: 10563381178666, sign: sign },
         },
         UpdatePositionParameters {
             salt: 0,
             bounds: Bounds {
-                lower: i129 { mag: 1500, sign: true }, upper: i129 { mag: 1500, sign: false },
+                lower: i129 { mag: 1500, sign: true }, upper: i129 { mag: 1501, sign: false },
             },
             liquidity_delta: i129 { mag: 11718310854200, sign: sign },
         },
         UpdatePositionParameters {
             salt: 0,
             bounds: Bounds {
-                lower: i129 { mag: 1250, sign: true }, upper: i129 { mag: 1250, sign: false },
+                lower: i129 { mag: 1250, sign: true }, upper: i129 { mag: 1251, sign: false },
             },
             liquidity_delta: i129 { mag: 12589334824347, sign: sign },
         },
         UpdatePositionParameters {
             salt: 0,
             bounds: Bounds {
-                lower: i129 { mag: 1000, sign: true }, upper: i129 { mag: 1000, sign: false },
+                lower: i129 { mag: 1000, sign: true }, upper: i129 { mag: 1001, sign: false },
             },
             liquidity_delta: i129 { mag: 12875456070356, sign: sign },
         },
         UpdatePositionParameters {
             salt: 0,
             bounds: Bounds {
-                lower: i129 { mag: 750, sign: true }, upper: i129 { mag: 750, sign: false },
+                lower: i129 { mag: 750, sign: true }, upper: i129 { mag: 751, sign: false },
             },
             liquidity_delta: i129 { mag: 12209146319378, sign: sign },
         },
         UpdatePositionParameters {
             salt: 0,
             bounds: Bounds {
-                lower: i129 { mag: 500, sign: true }, upper: i129 { mag: 500, sign: false },
+                lower: i129 { mag: 500, sign: true }, upper: i129 { mag: 501, sign: false },
             },
             liquidity_delta: i129 { mag: 10259786823007, sign: sign },
         },
         UpdatePositionParameters {
             salt: 0,
             bounds: Bounds {
-                lower: i129 { mag: 250, sign: true }, upper: i129 { mag: 250, sign: false },
+                lower: i129 { mag: 250, sign: true }, upper: i129 { mag: 251, sign: false },
             },
             liquidity_delta: i129 { mag: 6913517889965, sign: sign },
         },

@@ -42,13 +42,14 @@ pub mod TestProfile {
             self: @ContractState, pool_key: PoolKey, liquidity_factor: i129,
         ) -> Span<UpdatePositionParameters> {
             let (_, initial_tick, step, n) = self.params.read(pool_key);
+            let dt = i129 { mag: pool_key.tick_spacing, sign: false };
             let mut updates = array![];
             for i in 0..n.mag {
                 let update_params = UpdatePositionParameters {
                     salt: 0,
                     bounds: Bounds {
                         lower: initial_tick - i129 { mag: (1 + i), sign: false } * step,
-                        upper: initial_tick + i129 { mag: (1 + i), sign: false } * step,
+                        upper: initial_tick + i129 { mag: (1 + i), sign: false } * step + dt,
                     },
                     liquidity_delta: liquidity_factor / i129 { mag: (i + 1), sign: false },
                 };

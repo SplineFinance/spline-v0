@@ -83,22 +83,22 @@ fn test_symmetric_liquidity_profile_get_bounds_for_liquidity_updates() {
     assert_eq!(bounds.len(), 16);
 
     let expected_bounds = array![
-        Bounds { lower: i129 { mag: 250, sign: true }, upper: i129 { mag: 250, sign: false } },
-        Bounds { lower: i129 { mag: 500, sign: true }, upper: i129 { mag: 500, sign: false } },
-        Bounds { lower: i129 { mag: 750, sign: true }, upper: i129 { mag: 750, sign: false } },
-        Bounds { lower: i129 { mag: 1000, sign: true }, upper: i129 { mag: 1000, sign: false } },
-        Bounds { lower: i129 { mag: 1250, sign: true }, upper: i129 { mag: 1250, sign: false } },
-        Bounds { lower: i129 { mag: 1500, sign: true }, upper: i129 { mag: 1500, sign: false } },
-        Bounds { lower: i129 { mag: 1750, sign: true }, upper: i129 { mag: 1750, sign: false } },
-        Bounds { lower: i129 { mag: 2000, sign: true }, upper: i129 { mag: 2000, sign: false } },
-        Bounds { lower: i129 { mag: 2500, sign: true }, upper: i129 { mag: 2500, sign: false } },
-        Bounds { lower: i129 { mag: 3000, sign: true }, upper: i129 { mag: 3000, sign: false } },
-        Bounds { lower: i129 { mag: 3500, sign: true }, upper: i129 { mag: 3500, sign: false } },
-        Bounds { lower: i129 { mag: 4000, sign: true }, upper: i129 { mag: 4000, sign: false } },
-        Bounds { lower: i129 { mag: 5000, sign: true }, upper: i129 { mag: 5000, sign: false } },
-        Bounds { lower: i129 { mag: 6000, sign: true }, upper: i129 { mag: 6000, sign: false } },
-        Bounds { lower: i129 { mag: 7000, sign: true }, upper: i129 { mag: 7000, sign: false } },
-        Bounds { lower: i129 { mag: 8000, sign: true }, upper: i129 { mag: 8000, sign: false } },
+        Bounds { lower: i129 { mag: 250, sign: true }, upper: i129 { mag: 251, sign: false } },
+        Bounds { lower: i129 { mag: 500, sign: true }, upper: i129 { mag: 501, sign: false } },
+        Bounds { lower: i129 { mag: 750, sign: true }, upper: i129 { mag: 751, sign: false } },
+        Bounds { lower: i129 { mag: 1000, sign: true }, upper: i129 { mag: 1001, sign: false } },
+        Bounds { lower: i129 { mag: 1250, sign: true }, upper: i129 { mag: 1251, sign: false } },
+        Bounds { lower: i129 { mag: 1500, sign: true }, upper: i129 { mag: 1501, sign: false } },
+        Bounds { lower: i129 { mag: 1750, sign: true }, upper: i129 { mag: 1751, sign: false } },
+        Bounds { lower: i129 { mag: 2000, sign: true }, upper: i129 { mag: 2001, sign: false } },
+        Bounds { lower: i129 { mag: 2500, sign: true }, upper: i129 { mag: 2501, sign: false } },
+        Bounds { lower: i129 { mag: 3000, sign: true }, upper: i129 { mag: 3001, sign: false } },
+        Bounds { lower: i129 { mag: 3500, sign: true }, upper: i129 { mag: 3501, sign: false } },
+        Bounds { lower: i129 { mag: 4000, sign: true }, upper: i129 { mag: 4001, sign: false } },
+        Bounds { lower: i129 { mag: 5000, sign: true }, upper: i129 { mag: 5001, sign: false } },
+        Bounds { lower: i129 { mag: 6000, sign: true }, upper: i129 { mag: 6001, sign: false } },
+        Bounds { lower: i129 { mag: 7000, sign: true }, upper: i129 { mag: 7001, sign: false } },
+        Bounds { lower: i129 { mag: 8000, sign: true }, upper: i129 { mag: 8001, sign: false } },
     ]
         .span();
     for i in 0..bounds.len() {

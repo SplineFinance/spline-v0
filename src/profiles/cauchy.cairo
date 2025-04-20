@@ -137,10 +137,10 @@ pub mod CauchyLiquidityProfile {
             for i in 0..n {
                 let j = n - i - 1;
                 let bound = bounds[j];
-                // @dev use upper bound on positive tick side so discretization <= continuous curve
-                // at all points
+                // @dev use lower bound given pool.liquidity = sum over liquidity deltas up to and
+                // including current pool tick, so upper = -bound.lower + pool_key.tick_spacing
                 let l: i129 = self
-                    ._get_liquidity_at_tick(pool_key, liquidity_factor, mu, gamma, *bound.upper);
+                    ._get_liquidity_at_tick(pool_key, liquidity_factor, mu, gamma, *bound.lower);
                 updates
                     .append(
                         UpdatePositionParameters {
@@ -169,8 +169,6 @@ pub mod CauchyLiquidityProfile {
             let gamma_u256: u256 = gamma.try_into().unwrap();
             let shifted_tick_mag_256: u256 = (tick - mu).mag.try_into().unwrap();
 
-            // TODO: check max tick so does not overflow (100x uni v3/v4 max_tick given ticks in
-            // 0.01 bps? univ3/v4 tick_max fits in int24)
             let denom: u256 = gamma_u256 * gamma_u256 + shifted_tick_mag_256 * shifted_tick_mag_256;
             let num: u256 = gamma_u256 * gamma_u256;
 

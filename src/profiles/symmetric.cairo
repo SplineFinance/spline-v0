@@ -34,22 +34,25 @@ pub mod SymmetricLiquidityProfileComponent {
             self: @ComponentState<TContractState>, pool_key: PoolKey,
         ) -> Span<Bounds> {
             let (s, res, tick_start, tick_max) = self.grid.read(pool_key);
-            let mut ticks: Bounds = Bounds { lower: tick_start, upper: tick_start };
+            // @dev upper bound is inclusive of liquidity delta at bound tick so up by one tick
+            // spacing to make liquidity profile symmetric about tick start
+            let dt = i129 { mag: pool_key.tick_spacing, sign: false };
+            let mut ticks: Bounds = Bounds { lower: tick_start, upper: tick_start + dt };
             let mut bounds = array![];
 
             let mut seg: i129 = i129 { mag: s, sign: false };
-            let mut next: Bounds = Bounds { lower: tick_start - seg, upper: tick_start + seg };
+            let mut next: Bounds = Bounds { lower: ticks.lower - seg, upper: ticks.upper + seg };
             let mut step: i129 = i129 { mag: s / res, sign: false };
 
             let mut i: u256 = 0;
-            while ticks.upper != tick_max {
-                // (0, s], [s, 2*s], [2*s, 4*s], [4*s, 8*s], [8*s, 16*s], ...
+            while ticks.upper != (tick_max + dt) {
+                // [0, s), [s, 2*s), [2*s, 4*s), [4*s, 8*s), [8*s, 16*s), ...
                 // with each range split up into 1/resolution bins
                 ticks.lower -= step;
                 ticks.upper += step;
 
-                if ticks.upper > tick_max {
-                    ticks.upper = tick_max;
+                if ticks.upper > (tick_max + dt) {
+                    ticks.upper = tick_max + dt;
                     break;
                 } else if ticks.upper == next.upper {
                     if i > 0 {

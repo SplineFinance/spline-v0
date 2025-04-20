@@ -292,6 +292,7 @@ fn test_create_and_initialize_pool_adds_initial_liquidity_to_pool() {
     let initial_tick = i129 { mag: 0, sign: false };
     assert_eq!(initial_tick, *default_profile_params[1]);
 
+    let dt = i129 { mag: pool_key.tick_spacing, sign: false };
     let liquidity_factor = *default_profile_params[0];
     let step = *default_profile_params[2];
     let n = *default_profile_params[3];
@@ -301,7 +302,7 @@ fn test_create_and_initialize_pool_adds_initial_liquidity_to_pool() {
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 1, sign: false } * step,
-                upper: initial_tick + i129 { mag: 1, sign: false } * step,
+                upper: initial_tick + i129 { mag: 1, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor / i129 { mag: 1, sign: false },
         },
@@ -309,7 +310,7 @@ fn test_create_and_initialize_pool_adds_initial_liquidity_to_pool() {
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 2, sign: false } * step,
-                upper: initial_tick + i129 { mag: 2, sign: false } * step,
+                upper: initial_tick + i129 { mag: 2, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor / i129 { mag: 2, sign: false },
         },
@@ -317,7 +318,7 @@ fn test_create_and_initialize_pool_adds_initial_liquidity_to_pool() {
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 3, sign: false } * step,
-                upper: initial_tick + i129 { mag: 3, sign: false } * step,
+                upper: initial_tick + i129 { mag: 3, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor / i129 { mag: 3, sign: false },
         },
@@ -325,7 +326,7 @@ fn test_create_and_initialize_pool_adds_initial_liquidity_to_pool() {
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 4, sign: false } * step,
-                upper: initial_tick + i129 { mag: 4, sign: false } * step,
+                upper: initial_tick + i129 { mag: 4, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor / i129 { mag: 4, sign: false },
         },
@@ -703,6 +704,7 @@ fn test_add_liquidity_adds_liquidity_to_pool() {
     let initial_liquidity_factor = lp.pool_liquidity_factor(pool_key);
     assert_eq!(initial_liquidity_factor, 1000000000000000000);
 
+    let dt = i129 { mag: pool_key.tick_spacing, sign: false };
     let initial_liquidity_factor = *default_profile_params[0];
     let factor = 100000000000000000000; // 100 * 1e18
     let liquidity_factor: i129 = i129 { mag: factor, sign: false };
@@ -714,7 +716,7 @@ fn test_add_liquidity_adds_liquidity_to_pool() {
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 1, sign: false } * step,
-                upper: initial_tick + i129 { mag: 1, sign: false } * step,
+                upper: initial_tick + i129 { mag: 1, sign: false } * step + dt,
             },
             liquidity_delta: initial_liquidity_factor / i129 { mag: 1, sign: false },
         },
@@ -722,7 +724,7 @@ fn test_add_liquidity_adds_liquidity_to_pool() {
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 2, sign: false } * step,
-                upper: initial_tick + i129 { mag: 2, sign: false } * step,
+                upper: initial_tick + i129 { mag: 2, sign: false } * step + dt,
             },
             liquidity_delta: initial_liquidity_factor / i129 { mag: 2, sign: false },
         },
@@ -730,7 +732,7 @@ fn test_add_liquidity_adds_liquidity_to_pool() {
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 3, sign: false } * step,
-                upper: initial_tick + i129 { mag: 3, sign: false } * step,
+                upper: initial_tick + i129 { mag: 3, sign: false } * step + dt,
             },
             liquidity_delta: initial_liquidity_factor / i129 { mag: 3, sign: false },
         },
@@ -738,7 +740,7 @@ fn test_add_liquidity_adds_liquidity_to_pool() {
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 4, sign: false } * step,
-                upper: initial_tick + i129 { mag: 4, sign: false } * step,
+                upper: initial_tick + i129 { mag: 4, sign: false } * step + dt,
             },
             liquidity_delta: initial_liquidity_factor / i129 { mag: 4, sign: false },
         },
@@ -749,7 +751,7 @@ fn test_add_liquidity_adds_liquidity_to_pool() {
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 1, sign: false } * step,
-                upper: initial_tick + i129 { mag: 1, sign: false } * step,
+                upper: initial_tick + i129 { mag: 1, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor / i129 { mag: 1, sign: false },
         },
@@ -757,7 +759,7 @@ fn test_add_liquidity_adds_liquidity_to_pool() {
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 2, sign: false } * step,
-                upper: initial_tick + i129 { mag: 2, sign: false } * step,
+                upper: initial_tick + i129 { mag: 2, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor / i129 { mag: 2, sign: false },
         },
@@ -765,7 +767,7 @@ fn test_add_liquidity_adds_liquidity_to_pool() {
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 3, sign: false } * step,
-                upper: initial_tick + i129 { mag: 3, sign: false } * step,
+                upper: initial_tick + i129 { mag: 3, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor / i129 { mag: 3, sign: false },
         },
@@ -773,7 +775,7 @@ fn test_add_liquidity_adds_liquidity_to_pool() {
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 4, sign: false } * step,
-                upper: initial_tick + i129 { mag: 4, sign: false } * step,
+                upper: initial_tick + i129 { mag: 4, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor / i129 { mag: 4, sign: false },
         },
@@ -979,7 +981,7 @@ fn test_update_position_fails_if_not_extension() {
     let (pool_key, _, _, _, _, _, _) = setup_add_liquidity();
     let liquidity = 100;
     let bounds = Bounds {
-        lower: i129 { mag: 100, sign: true }, upper: i129 { mag: 100, sign: false },
+        lower: i129 { mag: 100, sign: true }, upper: i129 { mag: 101, sign: false },
     };
     // Try to deposit liquidity
     positions().mint_and_deposit(pool_key, bounds, liquidity);
@@ -1051,6 +1053,7 @@ fn test_remove_liquidity_removes_liquidity_from_pool() {
         .balance_of(get_contract_address());
     let shares_removed = shares / 4;
 
+    let dt = i129 { mag: pool_key.tick_spacing, sign: false };
     let initial_liquidity_factor = *default_profile_params[0];
     let factor = 100000000000000000000; // 100 * 1e18
     let liquidity_factor_before: i129 = i129 { mag: factor, sign: false }
@@ -1063,7 +1066,7 @@ fn test_remove_liquidity_removes_liquidity_from_pool() {
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 1, sign: false } * step,
-                upper: initial_tick + i129 { mag: 1, sign: false } * step,
+                upper: initial_tick + i129 { mag: 1, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_before / i129 { mag: 1, sign: false },
         },
@@ -1071,7 +1074,7 @@ fn test_remove_liquidity_removes_liquidity_from_pool() {
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 2, sign: false } * step,
-                upper: initial_tick + i129 { mag: 2, sign: false } * step,
+                upper: initial_tick + i129 { mag: 2, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_before / i129 { mag: 2, sign: false },
         },
@@ -1079,7 +1082,7 @@ fn test_remove_liquidity_removes_liquidity_from_pool() {
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 3, sign: false } * step,
-                upper: initial_tick + i129 { mag: 3, sign: false } * step,
+                upper: initial_tick + i129 { mag: 3, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_before / i129 { mag: 3, sign: false },
         },
@@ -1087,7 +1090,7 @@ fn test_remove_liquidity_removes_liquidity_from_pool() {
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 4, sign: false } * step,
-                upper: initial_tick + i129 { mag: 4, sign: false } * step,
+                upper: initial_tick + i129 { mag: 4, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_before / i129 { mag: 4, sign: false },
         },
@@ -1101,7 +1104,7 @@ fn test_remove_liquidity_removes_liquidity_from_pool() {
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 1, sign: false } * step,
-                upper: initial_tick + i129 { mag: 1, sign: false } * step,
+                upper: initial_tick + i129 { mag: 1, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_removed / i129 { mag: 1, sign: true },
         },
@@ -1109,7 +1112,7 @@ fn test_remove_liquidity_removes_liquidity_from_pool() {
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 2, sign: false } * step,
-                upper: initial_tick + i129 { mag: 2, sign: false } * step,
+                upper: initial_tick + i129 { mag: 2, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_removed / i129 { mag: 2, sign: true },
         },
@@ -1117,7 +1120,7 @@ fn test_remove_liquidity_removes_liquidity_from_pool() {
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 3, sign: false } * step,
-                upper: initial_tick + i129 { mag: 3, sign: false } * step,
+                upper: initial_tick + i129 { mag: 3, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_removed / i129 { mag: 3, sign: true },
         },
@@ -1125,7 +1128,7 @@ fn test_remove_liquidity_removes_liquidity_from_pool() {
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 4, sign: false } * step,
-                upper: initial_tick + i129 { mag: 4, sign: false } * step,
+                upper: initial_tick + i129 { mag: 4, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_removed / i129 { mag: 4, sign: true },
         },
@@ -1612,6 +1615,7 @@ fn test_add_liquidity_harvest_fees_adds_liquidity_prior_with_tick_less_than_init
     }
 
     // check positions on pool have been updated
+    let dt = i129 { mag: pool_key.tick_spacing, sign: false };
     let initial_tick = i129 { mag: 0, sign: false };
     let liquidity_factor_after_delta: i129 = i129 { mag: liquidity_factor_after, sign: false };
     let liquidity_updates_after: Span<UpdatePositionParameters> = array![
@@ -1619,7 +1623,7 @@ fn test_add_liquidity_harvest_fees_adds_liquidity_prior_with_tick_less_than_init
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 1, sign: false } * step,
-                upper: initial_tick + i129 { mag: 1, sign: false } * step,
+                upper: initial_tick + i129 { mag: 1, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_after_delta / i129 { mag: 1, sign: false },
         },
@@ -1627,7 +1631,7 @@ fn test_add_liquidity_harvest_fees_adds_liquidity_prior_with_tick_less_than_init
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 2, sign: false } * step,
-                upper: initial_tick + i129 { mag: 2, sign: false } * step,
+                upper: initial_tick + i129 { mag: 2, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_after_delta / i129 { mag: 2, sign: false },
         },
@@ -1635,7 +1639,7 @@ fn test_add_liquidity_harvest_fees_adds_liquidity_prior_with_tick_less_than_init
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 3, sign: false } * step,
-                upper: initial_tick + i129 { mag: 3, sign: false } * step,
+                upper: initial_tick + i129 { mag: 3, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_after_delta / i129 { mag: 3, sign: false },
         },
@@ -1643,7 +1647,7 @@ fn test_add_liquidity_harvest_fees_adds_liquidity_prior_with_tick_less_than_init
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 4, sign: false } * step,
-                upper: initial_tick + i129 { mag: 4, sign: false } * step,
+                upper: initial_tick + i129 { mag: 4, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_after_delta / i129 { mag: 4, sign: false },
         },
@@ -1801,6 +1805,7 @@ fn test_add_liquidity_harvest_fees_adds_liquidity_prior_with_tick_greater_than_i
     }
 
     // check positions on pool have been updated
+    let dt = i129 { mag: pool_key.tick_spacing, sign: false };
     let initial_tick = i129 { mag: 0, sign: false };
     let liquidity_factor_after_delta: i129 = i129 { mag: liquidity_factor_after, sign: false };
     let liquidity_updates_after: Span<UpdatePositionParameters> = array![
@@ -1808,7 +1813,7 @@ fn test_add_liquidity_harvest_fees_adds_liquidity_prior_with_tick_greater_than_i
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 1, sign: false } * step,
-                upper: initial_tick + i129 { mag: 1, sign: false } * step,
+                upper: initial_tick + i129 { mag: 1, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_after_delta / i129 { mag: 1, sign: false },
         },
@@ -1816,7 +1821,7 @@ fn test_add_liquidity_harvest_fees_adds_liquidity_prior_with_tick_greater_than_i
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 2, sign: false } * step,
-                upper: initial_tick + i129 { mag: 2, sign: false } * step,
+                upper: initial_tick + i129 { mag: 2, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_after_delta / i129 { mag: 2, sign: false },
         },
@@ -1824,7 +1829,7 @@ fn test_add_liquidity_harvest_fees_adds_liquidity_prior_with_tick_greater_than_i
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 3, sign: false } * step,
-                upper: initial_tick + i129 { mag: 3, sign: false } * step,
+                upper: initial_tick + i129 { mag: 3, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_after_delta / i129 { mag: 3, sign: false },
         },
@@ -1832,7 +1837,7 @@ fn test_add_liquidity_harvest_fees_adds_liquidity_prior_with_tick_greater_than_i
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 4, sign: false } * step,
-                upper: initial_tick + i129 { mag: 4, sign: false } * step,
+                upper: initial_tick + i129 { mag: 4, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_after_delta / i129 { mag: 4, sign: false },
         },
@@ -2051,6 +2056,7 @@ fn test_remove_liquidity_harvest_fees_adds_liquidity_prior_with_tick_less_than_i
     }
 
     // check positions on pool have been updated
+    let dt = i129 { mag: pool_key.tick_spacing, sign: false };
     let initial_tick = i129 { mag: 0, sign: false };
     let liquidity_factor_after_delta: i129 = i129 { mag: liquidity_factor_after, sign: false };
     let liquidity_updates_after: Span<UpdatePositionParameters> = array![
@@ -2058,7 +2064,7 @@ fn test_remove_liquidity_harvest_fees_adds_liquidity_prior_with_tick_less_than_i
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 1, sign: false } * step,
-                upper: initial_tick + i129 { mag: 1, sign: false } * step,
+                upper: initial_tick + i129 { mag: 1, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_after_delta / i129 { mag: 1, sign: false },
         },
@@ -2066,7 +2072,7 @@ fn test_remove_liquidity_harvest_fees_adds_liquidity_prior_with_tick_less_than_i
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 2, sign: false } * step,
-                upper: initial_tick + i129 { mag: 2, sign: false } * step,
+                upper: initial_tick + i129 { mag: 2, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_after_delta / i129 { mag: 2, sign: false },
         },
@@ -2074,7 +2080,7 @@ fn test_remove_liquidity_harvest_fees_adds_liquidity_prior_with_tick_less_than_i
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 3, sign: false } * step,
-                upper: initial_tick + i129 { mag: 3, sign: false } * step,
+                upper: initial_tick + i129 { mag: 3, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_after_delta / i129 { mag: 3, sign: false },
         },
@@ -2082,7 +2088,7 @@ fn test_remove_liquidity_harvest_fees_adds_liquidity_prior_with_tick_less_than_i
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 4, sign: false } * step,
-                upper: initial_tick + i129 { mag: 4, sign: false } * step,
+                upper: initial_tick + i129 { mag: 4, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_after_delta / i129 { mag: 4, sign: false },
         },
@@ -2239,6 +2245,7 @@ fn test_remove_liquidity_harvest_fees_adds_liquidity_prior_with_tick_greater_tha
     }
 
     // check positions on pool have been updated
+    let dt = i129 { mag: pool_key.tick_spacing, sign: false };
     let initial_tick = i129 { mag: 0, sign: false };
     let liquidity_factor_after_delta: i129 = i129 { mag: liquidity_factor_after, sign: false };
     let liquidity_updates_after: Span<UpdatePositionParameters> = array![
@@ -2246,7 +2253,7 @@ fn test_remove_liquidity_harvest_fees_adds_liquidity_prior_with_tick_greater_tha
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 1, sign: false } * step,
-                upper: initial_tick + i129 { mag: 1, sign: false } * step,
+                upper: initial_tick + i129 { mag: 1, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_after_delta / i129 { mag: 1, sign: false },
         },
@@ -2254,7 +2261,7 @@ fn test_remove_liquidity_harvest_fees_adds_liquidity_prior_with_tick_greater_tha
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 2, sign: false } * step,
-                upper: initial_tick + i129 { mag: 2, sign: false } * step,
+                upper: initial_tick + i129 { mag: 2, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_after_delta / i129 { mag: 2, sign: false },
         },
@@ -2262,7 +2269,7 @@ fn test_remove_liquidity_harvest_fees_adds_liquidity_prior_with_tick_greater_tha
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 3, sign: false } * step,
-                upper: initial_tick + i129 { mag: 3, sign: false } * step,
+                upper: initial_tick + i129 { mag: 3, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_after_delta / i129 { mag: 3, sign: false },
         },
@@ -2270,7 +2277,7 @@ fn test_remove_liquidity_harvest_fees_adds_liquidity_prior_with_tick_greater_tha
             salt: 0,
             bounds: Bounds {
                 lower: initial_tick - i129 { mag: 4, sign: false } * step,
-                upper: initial_tick + i129 { mag: 4, sign: false } * step,
+                upper: initial_tick + i129 { mag: 4, sign: false } * step + dt,
             },
             liquidity_delta: liquidity_factor_after_delta / i129 { mag: 4, sign: false },
         },
