@@ -390,6 +390,7 @@ fn test_create_and_initialize_pool_with_cauchy_profile() {
     ); // value at initial tick = 0 should be some of range position liquidity deltas
 
     // go through the liquidity delta updates and verify liquidity delta net values
+    let (_, max_tick) = tick_limits_from_ekubo_core();
     let expected_updates = updates(pool_key, false);
     for i in 0..expected_updates.len() {
         let (liquidity_net_lower, liquidity_net_upper) = (
@@ -407,6 +408,13 @@ fn test_create_and_initialize_pool_with_cauchy_profile() {
             i129 { mag: *expected_updates[i].liquidity_delta.mag, sign: true },
             one() / 1000000 // 1e-6
         );
+
+        // so that liquidity delta negative does not kick in on positive side until after +/- tick
+        if *expected_updates[i].bounds.upper.mag < max_tick.mag {
+            assert_gt!(
+                *expected_updates[i].bounds.upper.mag, *expected_updates[i].bounds.lower.mag,
+            );
+        }
     }
 }
 
