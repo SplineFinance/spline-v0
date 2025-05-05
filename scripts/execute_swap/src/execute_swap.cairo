@@ -8,7 +8,7 @@ use starknet::ContractAddress;
 
 // The example below uses a contract deployed to the Sepolia testnet
 const ROUTER_ADDRESS: felt252 = 0x0199741822c2dc722f6f605204f35e56dbc23bceed54818168c4c49e4fb8737e;
-const LP_ADDRESS: felt252 = 0x0745f3180bba2826c33fc66f9571bcb9731d7a55d71e8d935fac5f3e6a8aa1e4;
+const LP_ADDRESS: felt252 = 0x02253efb6547890843ed4e3d315d40307660ecb72e7364667c90700ecffae490;
 const TOKEN0_ADDRESS: felt252 =
     0x03fe2b97c1fd336e750087d68b9b867997fd64a2661ff3ca5a7c771641e8e7ac; // TODO: replace
 const TOKEN1_ADDRESS: felt252 =

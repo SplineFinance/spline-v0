@@ -3,7 +3,7 @@ version = 1
 
 [[package]]
 name = "create_pool"
-version = "0.1.2"
+version = "0.1.4"
 dependencies = [
  "ekubo",
  "sncast_std",
@@ -16,7 +16,7 @@ source = "git+https://github.com/ekuboprotocol/abis#edb6de8c9baf515f1053bbab3d86
 
 [[package]]
 name = "execute_swap"
-version = "0.1.2"
+version = "0.1.4"
 dependencies = [
  "ekubo",
  "openzeppelin_token",

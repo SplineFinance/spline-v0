@@ -4,7 +4,7 @@ use ekubo::types::keys::PoolKey;
 use sncast_std::{DeclareResultTrait, FeeSettingsTrait, call, declare, deploy, get_nonce, invoke};
 
 // The example below uses a contract deployed to the Sepolia testnet
-const LP_ADDRESS: felt252 = 0x0745f3180bba2826c33fc66f9571bcb9731d7a55d71e8d935fac5f3e6a8aa1e4;
+const LP_ADDRESS: felt252 = 0x02253efb6547890843ed4e3d315d40307660ecb72e7364667c90700ecffae490;
 const TOKEN0_ADDRESS: felt252 =
     0x03fe2b97c1fd336e750087d68b9b867997fd64a2661ff3ca5a7c771641e8e7ac; // TODO: replace
 const TOKEN1_ADDRESS: felt252 =
