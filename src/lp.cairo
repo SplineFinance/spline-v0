@@ -9,6 +9,9 @@ pub trait ILiquidityProvider<TStorage> {
         profile_params: Span<ekubo::types::i129::i129>,
     );
 
+    /// compounds any existing fees on pool with ekubo key `pool_key` into the liquidity factor
+    fn compound_fees(ref self: TStorage, pool_key: ekubo::types::keys::PoolKey) -> u128;
+
     /// adds an amount of liquidity factor to pool with ekubo key `pool_key`, minting shares to
     /// caller
     fn add_liquidity(
@@ -52,7 +55,7 @@ pub mod LiquidityProvider {
     use core::poseidon::poseidon_hash_span;
     use ekubo::components::owned::Owned as OwnedComponent;
     use ekubo::components::shared_locker::{
-        call_core_with_callback, check_caller_is_core, consume_callback_data, handle_delta,
+        call_core_with_callback, consume_callback_data, handle_delta,
     };
     use ekubo::components::upgradeable::{IHasInterface, Upgradeable as UpgradeableComponent};
     use ekubo::components::util::serialize;
@@ -75,6 +78,7 @@ pub mod LiquidityProvider {
     };
     use spline_v0::math::muldiv;
     use spline_v0::profile::{ILiquidityProfileDispatcher, ILiquidityProfileDispatcherTrait};
+    use spline_v0::shared_locker::try_call_core_with_callback;
     use spline_v0::sweep::SweepableComponent;
     use spline_v0::token::{
         ILiquidityProviderTokenDispatcher, ILiquidityProviderTokenDispatcherTrait,
@@ -223,27 +227,52 @@ pub mod LiquidityProvider {
                 .mint(get_contract_address(), shares);
         }
 
-        fn add_liquidity(ref self: ContractState, pool_key: PoolKey, factor: u128) -> u256 {
+        fn compound_fees(ref self: ContractState, pool_key: PoolKey) -> u128 {
             self.check_pool_key(pool_key);
             self.check_pool_initialized(pool_key);
 
             // calculate fees to collect from core and autocompound into liquidity factor
             let liquidity_fees: u128 = self.calculate_fees(pool_key);
 
+            // obtain core lock. should also effectively lock this contract for unique pool key
+            let core = self.core.read();
+            let caller = get_caller_address();
+            let liquidity_fees_delta = i129 { mag: liquidity_fees, sign: false };
+
+            // use try call core so ignores if fee compounding fails due to e.g. dust fee amounts
+            // with rounding issues
+            let result: Option<()> = try_call_core_with_callback::<
+                (PoolKey, i129, i129, u256, ContractAddress), (),
+            >(core, @(pool_key, Zero::<i129>::zero(), liquidity_fees_delta, 0, caller));
+
+            // if core call fails, return 0 as no fees to compound
+            if result.is_none() {
+                return 0;
+            }
+
+            // update liquidity factor in storage and return added liquidity factor from fees
+            let liquidity_factor = self.pool_liquidity_factors.read(pool_key);
+            self.pool_liquidity_factors.write(pool_key, liquidity_factor + liquidity_fees);
+
+            liquidity_fees
+        }
+
+        fn add_liquidity(ref self: ContractState, pool_key: PoolKey, factor: u128) -> u256 {
+            // compound fees if possible. also checks pool key and pool initialized
+            self.compound_fees(pool_key);
+
             // calculate shares to mint
             let liquidity_factor_delta = i129 { mag: factor, sign: false };
             self.check_liquidity_factor_delta(pool_key, liquidity_factor_delta);
 
-            let liquidity_fees_delta = i129 { mag: liquidity_fees, sign: false };
             let pool_token = self.pool_tokens.read(pool_key);
             let total_shares = IERC20Dispatcher { contract_address: pool_token }.total_supply();
 
             let liquidity_factor = self.pool_liquidity_factors.read(pool_key);
-            let shares = self
-                .calculate_shares(total_shares, factor, liquidity_factor + liquidity_fees);
+            let shares = self.calculate_shares(total_shares, factor, liquidity_factor);
 
             // add amount to liquidity factor in storage
-            let new_liquidity_factor = liquidity_factor + liquidity_fees + factor;
+            let new_liquidity_factor = liquidity_factor + factor;
             self.pool_liquidity_factors.write(pool_key, new_liquidity_factor);
 
             // obtain core lock. should also effectively lock this contract for unique pool key
@@ -251,7 +280,7 @@ pub mod LiquidityProvider {
             let caller = get_caller_address();
             call_core_with_callback::<
                 (PoolKey, i129, i129, u256, ContractAddress), (),
-            >(core, @(pool_key, liquidity_factor_delta, liquidity_fees_delta, shares, caller));
+            >(core, @(pool_key, liquidity_factor_delta, Zero::<i129>::zero(), shares, caller));
 
             // mint pool token shares to caller
             ILiquidityProviderTokenDispatcher { contract_address: pool_token }.mint(caller, shares);
@@ -260,26 +289,21 @@ pub mod LiquidityProvider {
         }
 
         fn remove_liquidity(ref self: ContractState, pool_key: PoolKey, shares: u256) -> u128 {
-            self.check_pool_key(pool_key);
-            self.check_pool_initialized(pool_key);
-
-            // calculate fees to collect from core and autocompound into liquidity factor
-            let liquidity_fees: u128 = self.calculate_fees(pool_key);
+            // compound fees if possible. also checks pool key and pool initialized
+            self.compound_fees(pool_key);
 
             // calculate liquidity factor to remove
             let pool_token = self.pool_tokens.read(pool_key);
             let total_shares = IERC20Dispatcher { contract_address: pool_token }.total_supply();
             let liquidity_factor = self.pool_liquidity_factors.read(pool_key);
 
-            let factor = self
-                .calculate_factor(liquidity_factor + liquidity_fees, shares, total_shares);
+            let factor = self.calculate_factor(liquidity_factor, shares, total_shares);
             let liquidity_factor_delta = i129 { mag: factor, sign: true };
             self.check_liquidity_factor_delta(pool_key, liquidity_factor_delta);
-            let liquidity_fees_delta = i129 { mag: liquidity_fees, sign: false };
 
             // remove amount from liquidity factor in storage
-            assert(liquidity_factor + liquidity_fees >= factor, 'Not enough liquidity');
-            let new_liquidity_factor = liquidity_factor + liquidity_fees - factor;
+            assert(liquidity_factor >= factor, 'Not enough liquidity');
+            let new_liquidity_factor = liquidity_factor - factor;
             self.pool_liquidity_factors.write(pool_key, new_liquidity_factor);
 
             // burn pool token shares from caller
@@ -290,7 +314,7 @@ pub mod LiquidityProvider {
             let core = self.core.read();
             call_core_with_callback::<
                 (PoolKey, i129, i129, u256, ContractAddress), (),
-            >(core, @(pool_key, liquidity_factor_delta, liquidity_fees_delta, shares, caller));
+            >(core, @(pool_key, liquidity_factor_delta, Zero::<i129>::zero(), shares, caller));
 
             factor
         }
@@ -414,8 +438,9 @@ pub mod LiquidityProvider {
             let mut delta = Zero::<Delta>::zero();
             // @dev length of returned array can cause gas cost to be high, so be careful with this
             for params in liquidity_update_params {
-                assert(*params.liquidity_delta.mag > 0, 'Liquidity delta update is 0');
-                delta += core.update_position(pool_key, *params);
+                if (*params.liquidity_delta).is_non_zero() {
+                    delta += core.update_position(pool_key, *params);
+                }
             }
             return delta;
         }
@@ -538,8 +563,7 @@ pub mod LiquidityProvider {
                 .update_positions(pool_key, liquidity_fees_delta); // positive as in to core
 
             // TODO: check protocol fee denom >= 2 there are no edge cases where dont have excess
-            // TODO: need this to never revert due to a rounding issue (maybe min harvest liquidity)
-            // TODO: fix rounding issues for small fee liquidity delta?
+            // TODO: check only reverts due to rounding issues with dust
             let mut excess_fees_delta = collected_fees_delta + fees_delta;
             assert(
                 excess_fees_delta.amount0 <= Zero::<i129>::zero(),

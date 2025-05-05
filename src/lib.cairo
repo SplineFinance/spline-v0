@@ -9,6 +9,7 @@ pub mod profiles {
     pub mod symmetric;
     pub mod test_symmetric;
 }
+pub mod shared_locker;
 pub mod test {
     pub mod test_profile;
     pub mod test_sweep;
