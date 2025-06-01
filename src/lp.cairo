@@ -221,10 +221,10 @@ pub mod LiquidityProvider {
                 (PoolKey, i129, i129, u256, ContractAddress), (),
             >(core, @(pool_key, liquidity_factor_delta, Zero::<i129>::zero(), shares, caller));
 
-            // lock initial minted lp tokens forever in this contract
+            // lock initial minted lp tokens forever in the pool token contract
             let pool_token = self.pool_tokens.read(pool_key);
             ILiquidityProviderTokenDispatcher { contract_address: pool_token }
-                .mint(get_contract_address(), shares);
+                .mint(pool_token, shares);
         }
 
         fn compound_fees(ref self: ContractState, pool_key: PoolKey) -> u128 {

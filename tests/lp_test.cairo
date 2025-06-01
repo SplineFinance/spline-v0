@@ -409,7 +409,7 @@ fn test_create_and_initialize_pool_transfers_funds_to_pool() {
 
 #[test]
 #[fork("mainnet")]
-fn test_create_and_initialize_pool_mints_initial_shares_to_liquidity_provider() {
+fn test_create_and_initialize_pool_mints_initial_shares_to_lp_token() {
     let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
 
     let initial_liquidity_factor = *default_profile_params[0];
@@ -427,7 +427,9 @@ fn test_create_and_initialize_pool_mints_initial_shares_to_liquidity_provider() 
     lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
 
     let pool_token = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) };
-    assert_eq!(pool_token.balance_of(lp.contract_address), initial_liquidity_factor.mag.into());
+    assert_eq!(
+        pool_token.balance_of(pool_token.contract_address), initial_liquidity_factor.mag.into(),
+    );
     assert_eq!(pool_token.total_supply(), initial_liquidity_factor.mag.into());
 }
 
@@ -653,7 +655,7 @@ fn test_add_liquidity_mints_shares() {
         contract_address: lp.pool_token(pool_key),
     };
     let total_shares = pool_token.total_supply(); // 1e18 given initial liquidity factor of 1e18
-    assert_eq!(pool_token.balance_of(lp.contract_address), total_shares);
+    assert_eq!(pool_token.balance_of(pool_token.contract_address), total_shares);
 
     // now add more liquidity
     let shares = 100000000000000000000; // 100 * 1e18 given initial liquidity factor of 1e18
@@ -684,7 +686,7 @@ fn test_add_liquidity_multiple_mints_shares() {
         contract_address: lp.pool_token(pool_key),
     };
     let total_shares = pool_token.total_supply(); // 1e18 given initial liquidity factor of 1e18
-    assert_eq!(pool_token.balance_of(lp.contract_address), total_shares);
+    assert_eq!(pool_token.balance_of(pool_token.contract_address), total_shares);
 
     // now add more liquidity
     let shares = 100000000000000000000; // 100 * 1e18 given initial liquidity factor of 1e18
