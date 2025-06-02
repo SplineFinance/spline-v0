@@ -2136,3 +2136,44 @@ fn test_remove_liquidity_harvest_fees_adds_liquidity_prior_with_tick_greater_tha
         );
     }
 }
+
+#[test]
+#[fork("mainnet")]
+fn test_sweep_transfers_tokens_to_recipient() {
+    let (pool_key, lp, _, _, default_profile_params, token0, token1, fees_delta) =
+        setup_harvest_fees(
+        false, 10000000000000000000, 25, true,
+    );
+
+    // send in tokens to the lp contract
+    token0.transfer(lp.contract_address, 1000000000000000);
+    assert_eq!(token0.balance_of(lp.contract_address), 1000000000000000);
+
+    // sweep tokens to recipient
+    let recipient = contract_address_const::<'recipient'>();
+    lp.sweep(token0.contract_address, recipient, 750000000000000);
+    assert_eq!(token0.balance_of(recipient), 750000000000000);
+    assert_eq!(token0.balance_of(lp.contract_address), 250000000000000);
+}
+
+#[test]
+#[fork("mainnet")]
+#[should_panic(expected: ('OWNER_ONLY',))]
+fn test_sweep_fails_if_not_owner() {
+    let (pool_key, lp, _, _, default_profile_params, token0, token1, fees_delta) =
+        setup_harvest_fees(
+        false, 10000000000000000000, 25, true,
+    );
+
+    // send in tokens to the lp contract
+    token0.transfer(lp.contract_address, 1000000000000000);
+    assert_eq!(token0.balance_of(lp.contract_address), 1000000000000000);
+
+    // cache balances of owner before to check protocol fees transferred
+    let owner = contract_address_const::<'new_owner'>();
+    let lp_owned: IOwnedDispatcher = IOwnedDispatcher { contract_address: lp.contract_address };
+    lp_owned.transfer_ownership(owner); // transfer ownership to owner
+
+    // attempt to sweep with different owner
+    lp.sweep(token0.contract_address, get_contract_address(), 1000000000000000);
+}

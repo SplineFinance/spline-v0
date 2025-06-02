@@ -23,6 +23,14 @@ pub trait ILiquidityProvider<TStorage> {
         ref self: TStorage, pool_key: ekubo::types::keys::PoolKey, shares: u256,
     ) -> u128;
 
+    /// sweeps any tokens in this contract to recipient. only callable by owner
+    fn sweep(
+        ref self: TStorage,
+        token: starknet::ContractAddress,
+        recipient: starknet::ContractAddress,
+        amount: u256,
+    );
+
     /// returns the ekubo core for pools deployed by this liquidity provider
     fn core(self: @TStorage) -> ekubo::interfaces::core::ICoreDispatcher;
 
@@ -307,6 +315,16 @@ pub mod LiquidityProvider {
             >(core, @(pool_key, liquidity_factor_delta, Zero::<i129>::zero(), shares, caller));
 
             factor
+        }
+
+        fn sweep(
+            ref self: ContractState,
+            token: starknet::ContractAddress,
+            recipient: starknet::ContractAddress,
+            amount: u256,
+        ) {
+            self.require_owner();
+            IERC20Dispatcher { contract_address: token }.transfer(recipient, amount);
         }
 
         fn core(self: @ContractState) -> ICoreDispatcher {
