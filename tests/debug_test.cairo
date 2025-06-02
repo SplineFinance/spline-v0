@@ -138,7 +138,13 @@ fn test_debug_add_then_remove_liquidity() {
     let token0_balance = token0.balance_of(get_contract_address());
     let token1_balance = token1.balance_of(get_contract_address());
 
-    let shares = lp.add_liquidity(pool_key, liquidity_factor_minted);
+    let shares = lp
+        .add_liquidity(
+            pool_key,
+            liquidity_factor_minted,
+            340282366920938463463374607431768211455,
+            340282366920938463463374607431768211455,
+        );
     let amount0_add = token0_balance - token0.balance_of(get_contract_address());
     let amount1_add = token1_balance - token1.balance_of(get_contract_address());
 
@@ -149,7 +155,7 @@ fn test_debug_add_then_remove_liquidity() {
     assert_close(reserve0_after_add.into(), reserve0.into() + amount0_add.into(), one() / 10000);
     assert_close(reserve1_after_add.into(), reserve1.into() + amount1_add.into(), one() / 10000);
 
-    let liquidity_factor_burned = lp.remove_liquidity(pool_key, shares);
+    let liquidity_factor_burned = lp.remove_liquidity(pool_key, shares, 0, 0);
     assert_eq!(liquidity_factor_minted, liquidity_factor_burned + 1);
 
     // check balances are back to original less fees

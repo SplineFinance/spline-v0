@@ -540,7 +540,7 @@ fn test_add_liquidity_updates_liquidity_factor() {
 
     // now add more liquidity
     let factor = 100000000000000000000; // 100 * 1e18
-    lp.add_liquidity(pool_key, factor);
+    lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
     assert_eq!(lp.pool_liquidity_factor(pool_key), initial_liquidity_factor + factor);
 }
 
@@ -561,7 +561,7 @@ fn test_add_liquidity_mints_shares() {
 
     // now add more liquidity
     let shares = 100000000000000000000; // 100 * 1e18 given initial liquidity factor of 1e18
-    assert_eq!(lp.add_liquidity(pool_key, factor), shares);
+    assert_eq!(lp.add_liquidity(pool_key, factor, max_u128(), max_u128()), shares);
     assert_eq!(pool_token.balance_of(get_contract_address()), shares);
     assert_eq!(pool_token.total_supply(), total_shares + shares);
 }
@@ -583,8 +583,8 @@ fn test_add_liquidity_multiple_mints_shares() {
 
     // now add more liquidity
     let shares = 100000000000000000000; // 100 * 1e18 given initial liquidity factor of 1e18
-    let result_first: u256 = lp.add_liquidity(pool_key, factor);
-    let result_second: u256 = lp.add_liquidity(pool_key, 2 * factor);
+    let result_first: u256 = lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
+    let result_second: u256 = lp.add_liquidity(pool_key, 2 * factor, max_u128(), max_u128());
     assert_eq!(result_first, shares);
     assert_eq!(result_second, 2 * shares);
     assert_eq!(pool_token.balance_of(get_contract_address()), 3 * shares);
@@ -688,7 +688,7 @@ fn test_add_liquidity_adds_liquidity_to_pool() {
     }
 
     // now add the liquidity
-    lp.add_liquidity(pool_key, factor);
+    lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
 
     // TODO: check why provider getter not working as expected in test (but works in contract)
     // check liquidity at expected profile ticks according to test profile
@@ -727,7 +727,7 @@ fn test_add_liquidity_transfers_funds_to_pool() {
     let balance0_before: u256 = token0.balance_of(get_contract_address());
     let balance1_before: u256 = token1.balance_of(get_contract_address());
 
-    lp.add_liquidity(pool_key, factor);
+    lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
 
     let balance0_after: u256 = token0.balance_of(get_contract_address());
     let balance1_after: u256 = token1.balance_of(get_contract_address());
@@ -757,7 +757,7 @@ fn test_add_liquidity_updates_pool_reserves() {
     let balance0_before: u256 = token0.balance_of(get_contract_address());
     let balance1_before: u256 = token1.balance_of(get_contract_address());
 
-    lp.add_liquidity(pool_key, factor);
+    lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
 
     let balance0_after: u256 = token0.balance_of(get_contract_address());
     let balance1_after: u256 = token1.balance_of(get_contract_address());
@@ -783,7 +783,7 @@ fn test_add_liquidity_emits_liquidity_updated_event() {
     let balance1_before = token1.balance_of(core.contract_address);
 
     let mut spy = spy_events();
-    let shares = lp.add_liquidity(pool_key, factor);
+    let shares = lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
 
     let balance0_after = token0.balance_of(core.contract_address);
     let balance1_after = token1.balance_of(core.contract_address);
@@ -830,7 +830,7 @@ fn test_add_liquidity_fails_if_extension_not_liquidity_provider() {
         tick_spacing: 1, // 0.01 bps
         extension: Zero::<ContractAddress>::zero(),
     };
-    lp.add_liquidity(pool_key, 100000000000000000000);
+    lp.add_liquidity(pool_key, 100000000000000000000, max_u128(), max_u128());
 }
 
 #[test]
@@ -838,7 +838,7 @@ fn test_add_liquidity_fails_if_extension_not_liquidity_provider() {
 #[should_panic(expected: ('Pool token not deployed',))]
 fn test_add_liquidity_fails_if_not_initialized() {
     let (pool_key, lp, _, _, _, _, _) = setup();
-    lp.add_liquidity(pool_key, 100000000000000000000);
+    lp.add_liquidity(pool_key, 100000000000000000000, max_u128(), max_u128());
 }
 
 #[test]
@@ -866,7 +866,7 @@ fn setup_remove_liquidity() -> (
     let (pool_key, lp, owner, profile, default_profile_params, token0, token1) =
         setup_add_liquidity();
     let factor = 100000000000000000000; // 100 * 1e18
-    lp.add_liquidity(pool_key, factor);
+    lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
     (pool_key, lp, owner, profile, default_profile_params, token0, token1)
 }
 
@@ -880,7 +880,7 @@ fn test_remove_liquidity_updates_liquidity_factor() {
 
     let liquidity_factor_before: u128 = lp.pool_liquidity_factor(pool_key);
     let liquidity_factor_removed: u128 = 25000000000000000000;
-    assert_eq!(lp.remove_liquidity(pool_key, shares_removed), liquidity_factor_removed);
+    assert_eq!(lp.remove_liquidity(pool_key, shares_removed, 0, 0), liquidity_factor_removed);
     assert_eq!(
         lp.pool_liquidity_factor(pool_key), liquidity_factor_before - liquidity_factor_removed,
     );
@@ -896,7 +896,7 @@ fn test_remove_liquidity_burns_shares() {
 
     let total_supply_before = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
         .total_supply();
-    lp.remove_liquidity(pool_key, shares_removed);
+    lp.remove_liquidity(pool_key, shares_removed, 0, 0);
 
     let total_supply_after = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
         .total_supply();
@@ -1008,7 +1008,7 @@ fn test_remove_liquidity_removes_liquidity_from_pool() {
     }
 
     // now remove the liquidity
-    lp.remove_liquidity(pool_key, shares_removed);
+    lp.remove_liquidity(pool_key, shares_removed, 0, 0);
 
     // TODO: check why provider getter not working as expected in test (but works in contract)
 
@@ -1045,7 +1045,7 @@ fn test_remove_liquidity_transfers_funds_from_pool() {
         token0.balance_of(get_contract_address()), token1.balance_of(get_contract_address()),
     );
 
-    lp.remove_liquidity(pool_key, shares_removed);
+    lp.remove_liquidity(pool_key, shares_removed, 0, 0);
 
     let (ekubo_balance0_after, ekubo_balance1_after) = (
         token0.balance_of(core.contract_address), token1.balance_of(core.contract_address),
@@ -1080,7 +1080,7 @@ fn test_remove_liquidity_updates_pool_reserves() {
     );
     let (reserves0_before, reserves1_before) = lp.pool_reserves(pool_key);
 
-    lp.remove_liquidity(pool_key, shares_removed);
+    lp.remove_liquidity(pool_key, shares_removed, 0, 0);
 
     let (ekubo_balance0_after, ekubo_balance1_after) = (
         token0.balance_of(core.contract_address), token1.balance_of(core.contract_address),
@@ -1113,7 +1113,7 @@ fn test_remove_liquidity_emits_liquidity_updated_event() {
     let balance1_before = token1.balance_of(core.contract_address);
 
     let mut spy = spy_events();
-    let factor = lp.remove_liquidity(pool_key, shares_removed);
+    let factor = lp.remove_liquidity(pool_key, shares_removed, 0, 0);
 
     let balance0_after = token0.balance_of(core.contract_address);
     let balance1_after = token1.balance_of(core.contract_address);
@@ -1160,7 +1160,7 @@ fn test_remove_liquidity_fails_if_extension_not_liquidity_provider() {
         tick_spacing: 1, // 0.01 bps
         extension: Zero::<ContractAddress>::zero(),
     };
-    lp.remove_liquidity(pool_key, 100000000000000000000);
+    lp.remove_liquidity(pool_key, 100000000000000000000, 0, 0);
 }
 
 #[test]
@@ -1168,7 +1168,7 @@ fn test_remove_liquidity_fails_if_extension_not_liquidity_provider() {
 #[should_panic(expected: ('Pool token not deployed',))]
 fn test_remove_liquidity_fails_if_not_initialized() {
     let (pool_key, lp, _, _, _, _, _) = setup();
-    lp.remove_liquidity(pool_key, 100000000000000000000);
+    lp.remove_liquidity(pool_key, 100000000000000000000, 0, 0);
 }
 
 #[test]
@@ -1250,6 +1250,10 @@ fn two_pow_128() -> u256 {
     340282366920938463463374607431768211456 // 2**128
 }
 
+fn max_u128() -> u128 {
+    340282366920938463463374607431768211455 // 2**128 - 1
+}
+
 fn assert_close(a: u256, b: u256, tol: u256) {
     let (mi, ma): (u256, u256) = if a > b {
         (b, a)
@@ -1318,7 +1322,7 @@ fn setup_harvest_fees(
     // add more liquidity to pool
     if add_more_liquidity {
         let _factor = 10000000000000000000000; // 10000 * 1e18
-        lp.add_liquidity(pool_key, _factor);
+        lp.add_liquidity(pool_key, _factor, max_u128(), max_u128());
     }
 
     let fees_delta: Delta = execute_swaps_on_pool(
@@ -1408,7 +1412,7 @@ fn test_add_liquidity_harvest_fees_adds_liquidity_prior_with_tick_less_than_init
     let owner_balance1_before: u256 = token1.balance_of(owner);
 
     // add the liquidity
-    let shares_added = lp.add_liquidity(pool_key, factor);
+    let shares_added = lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
     assert_lt!(shares_added, factor.try_into().unwrap());
 
     let total_shares_after: u256 = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
@@ -1598,7 +1602,7 @@ fn test_add_liquidity_harvest_fees_adds_liquidity_prior_with_tick_greater_than_i
     let owner_balance1_before: u256 = token1.balance_of(owner);
 
     // add the liquidity
-    let shares_added = lp.add_liquidity(pool_key, factor);
+    let shares_added = lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
     assert_lt!(shares_added, factor.try_into().unwrap());
 
     let total_shares_after: u256 = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
@@ -1743,7 +1747,7 @@ fn test_add_liquidity_harvest_fees_sends_excess_to_protocol_when_pool_liquidity_
 
     // add more liquidity and check shares_added < factor input due to fee harvest
     let factor: u128 = 10000000000000000000; // 10 * 1e18
-    let shares_added = lp.add_liquidity(pool_key, factor);
+    let shares_added = lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
     assert_lt!(shares_added, factor.try_into().unwrap());
 
     let fees_per_liquidity_after: FeesPerLiquidity = core.get_pool_fees_per_liquidity(pool_key);
@@ -1842,7 +1846,7 @@ fn test_remove_liquidity_harvest_fees_adds_liquidity_prior_with_tick_less_than_i
     let owner_balance1_before: u256 = token1.balance_of(owner);
 
     // add the liquidity
-    let factor = lp.remove_liquidity(pool_key, shares_removed);
+    let factor = lp.remove_liquidity(pool_key, shares_removed, 0, 0);
     let total_shares_after: u256 = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
         .total_supply();
     assert_eq!(total_shares_after, total_shares_prior - shares_removed);
@@ -2031,7 +2035,7 @@ fn test_remove_liquidity_harvest_fees_adds_liquidity_prior_with_tick_greater_tha
     let owner_balance1_before: u256 = token1.balance_of(owner);
 
     // add the liquidity
-    let factor = lp.remove_liquidity(pool_key, shares_removed);
+    let factor = lp.remove_liquidity(pool_key, shares_removed, 0, 0);
     let total_shares_after: u256 = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
         .total_supply();
     assert_eq!(total_shares_after, total_shares_prior - shares_removed);
@@ -2176,4 +2180,74 @@ fn test_sweep_fails_if_not_owner() {
 
     // attempt to sweep with different owner
     lp.sweep(token0.contract_address, get_contract_address(), 1000000000000000);
+}
+
+#[test]
+#[fork("mainnet")]
+#[should_panic(expected: ('Slippage exceeded on amount0',))]
+fn test_add_liquidity_fails_if_amount0_slippage_exceeded() {
+    let (pool_key, lp, _, profile, default_profile_params, token0, token1, mut fees_delta) =
+        setup_harvest_fees(
+        true, 10000000000000000000, 25, true,
+    );
+    assert_gt!(fees_delta.amount0.mag, 0);
+    assert_gt!(fees_delta.amount1.mag, 0);
+
+    // add more liquidity and check shares_added < factor input due to fee harvest
+    let factor: u128 = 10000000000000000000; // 10 * 1e18
+    lp.add_liquidity(pool_key, factor, 1, max_u128());
+}
+
+#[test]
+#[fork("mainnet")]
+#[should_panic(expected: ('Slippage exceeded on amount1',))]
+fn test_add_liquidity_fails_if_amount1_slippage_exceeded() {
+    let (pool_key, lp, _, profile, default_profile_params, token0, token1, mut fees_delta) =
+        setup_harvest_fees(
+        true, 10000000000000000000, 25, true,
+    );
+    assert_gt!(fees_delta.amount0.mag, 0);
+    assert_gt!(fees_delta.amount1.mag, 0);
+
+    // add more liquidity and check shares_added < factor input due to fee harvest
+    let factor: u128 = 10000000000000000000; // 10 * 1e18
+    lp.add_liquidity(pool_key, factor, max_u128(), 1);
+}
+
+#[test]
+#[fork("mainnet")]
+#[should_panic(expected: ('Slippage exceeded on amount0',))]
+fn test_remove_liquidity_fails_if_amount0_slippage_exceeded() {
+    let (pool_key, lp, _, profile, default_profile_params, token0, token1, mut fees_delta) =
+        setup_harvest_fees(
+        true, 10000000000000000000, 25, true,
+    );
+    assert_gt!(fees_delta.amount0.mag, 0);
+    assert_gt!(fees_delta.amount1.mag, 0);
+
+    let shares = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
+        .balance_of(get_contract_address());
+    let shares_removed = shares / 4;
+
+    // add more liquidity and check shares_added < factor input due to fee harvest
+    lp.remove_liquidity(pool_key, shares_removed, max_u128(), 0);
+}
+
+#[test]
+#[fork("mainnet")]
+#[should_panic(expected: ('Slippage exceeded on amount1',))]
+fn test_remove_liquidity_fails_if_amount1_slippage_exceeded() {
+    let (pool_key, lp, _, profile, default_profile_params, token0, token1, mut fees_delta) =
+        setup_harvest_fees(
+        true, 10000000000000000000, 25, true,
+    );
+    assert_gt!(fees_delta.amount0.mag, 0);
+    assert_gt!(fees_delta.amount1.mag, 0);
+
+    let shares = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
+        .balance_of(get_contract_address());
+    let shares_removed = shares / 4;
+
+    // add more liquidity and check shares_added < factor input due to fee harvest
+    lp.remove_liquidity(pool_key, shares_removed, 0, max_u128());
 }
