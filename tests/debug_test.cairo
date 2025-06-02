@@ -9,7 +9,6 @@ use snforge_std::{
 };
 use spline_v0::lp::{ILiquidityProviderDispatcher, ILiquidityProviderDispatcherTrait};
 use spline_v0::math::muldiv;
-use spline_v0::sweep::{ISweepableDispatcher, ISweepableDispatcherTrait};
 use spline_v0::test::test_wrapped_token::{
     ITestWrappedTokenDispatcher, ITestWrappedTokenDispatcherTrait,
 };
@@ -86,6 +85,24 @@ fn setup() -> (
     token0.transfer(token1.contract_address, 500000000);
     stop_cheat_caller_address(token0.contract_address);
 
+    // approve tokens for lp to spend from this address
+    assert(
+        token0
+            .approve(
+                lp.contract_address,
+                0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff,
+            ),
+        'token0 approve failed',
+    );
+    assert(
+        token1
+            .approve(
+                lp.contract_address,
+                0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff,
+            ),
+        'token1 approve failed',
+    );
+
     // mint some wrapped tokens
     ITestWrappedTokenDispatcher { contract_address: token1.contract_address }.mint(500000000);
 
@@ -110,8 +127,6 @@ fn assert_close(a: u256, b: u256, tol: u256) {
 fn test_debug_add_then_remove_liquidity() {
     let (pool_key, _, lp, token0, token1) = setup();
     let liquidity_factor_minted = 1000000000000;
-    let amount0 = 100000000;
-    let amount1 = 100000000;
 
     assert_eq!(token0.balance_of(get_contract_address()), 500000000);
     assert_eq!(token1.balance_of(get_contract_address()), 500000000);
@@ -123,15 +138,7 @@ fn test_debug_add_then_remove_liquidity() {
     let token0_balance = token0.balance_of(get_contract_address());
     let token1_balance = token1.balance_of(get_contract_address());
 
-    token0.transfer(lp.contract_address, amount0);
-    token1.transfer(lp.contract_address, amount1);
-
     let shares = lp.add_liquidity(pool_key, liquidity_factor_minted);
-    ISweepableDispatcher { contract_address: lp.contract_address }
-        .sweep(token0.contract_address, get_contract_address(), 0);
-    ISweepableDispatcher { contract_address: lp.contract_address }
-        .sweep(token1.contract_address, get_contract_address(), 0);
-
     let amount0_add = token0_balance - token0.balance_of(get_contract_address());
     let amount1_add = token1_balance - token1.balance_of(get_contract_address());
 

@@ -54,9 +54,7 @@ pub mod LiquidityProvider {
     use core::num::traits::Zero;
     use core::poseidon::poseidon_hash_span;
     use ekubo::components::owned::Owned as OwnedComponent;
-    use ekubo::components::shared_locker::{
-        call_core_with_callback, consume_callback_data, handle_delta,
-    };
+    use ekubo::components::shared_locker::{call_core_with_callback, consume_callback_data};
     use ekubo::components::upgradeable::{IHasInterface, Upgradeable as UpgradeableComponent};
     use ekubo::components::util::serialize;
     use ekubo::interfaces::core::{
@@ -78,8 +76,7 @@ pub mod LiquidityProvider {
     };
     use spline_v0::math::muldiv;
     use spline_v0::profile::{ILiquidityProfileDispatcher, ILiquidityProfileDispatcherTrait};
-    use spline_v0::shared_locker::try_call_core_with_callback;
-    use spline_v0::sweep::SweepableComponent;
+    use spline_v0::shared_locker::{handle_delta, try_call_core_with_callback};
     use spline_v0::token::{
         ILiquidityProviderTokenDispatcher, ILiquidityProviderTokenDispatcherTrait,
     };
@@ -104,10 +101,6 @@ pub mod LiquidityProvider {
     #[abi(embed_v0)]
     impl UpgradeableImpl = UpgradeableComponent::UpgradeableImpl<ContractState>;
 
-    component!(path: SweepableComponent, storage: sweepable, event: SweepableEvent);
-    #[abi(embed_v0)]
-    impl SweepableImpl = SweepableComponent::Sweepable<ContractState>;
-
     #[storage]
     struct Storage {
         core: ICoreDispatcher,
@@ -119,8 +112,6 @@ pub mod LiquidityProvider {
         upgradeable: UpgradeableComponent::Storage,
         #[substorage(v0)]
         owned: OwnedComponent::Storage,
-        #[substorage(v0)]
-        sweepable: SweepableComponent::Storage,
     }
 
     #[event]
@@ -130,7 +121,6 @@ pub mod LiquidityProvider {
         #[flat]
         UpgradeableEvent: UpgradeableComponent::Event,
         OwnedEvent: OwnedComponent::Event,
-        SweepableEvent: SweepableComponent::Event,
     }
 
     #[derive(Drop, starknet::Event)]
