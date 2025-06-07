@@ -21,6 +21,9 @@ pub mod SymmetricLiquidityProfileComponent {
     use spline_v0::profiles::bounds::ILiquidityProfileBounds;
     use starknet::storage::{Map, StorageMapReadAccess, StorageMapWriteAccess};
 
+    pub const MIN_TICK: i129 = i129 { mag: 88722883, sign: true };
+    pub const MAX_TICK: i129 = i129 { mag: 88722883, sign: false };
+
     #[storage]
     pub struct Storage {
         grid: Map<PoolKey, (u128, u128, i129, i129)> // s, res, tick_start, tick_max
@@ -85,10 +88,20 @@ pub mod SymmetricLiquidityProfileComponent {
                 *params[0].mag, *params[1].mag, *params[2], *params[3],
             );
 
-            assert((res > 0 && (res % 2 == 0)), 'resolution must be power of 2');
-            assert(tick_start < tick_max, 'tick_start must be < tick_max');
+            assert((res > 0 && (res & (res - 1)) == 0), 'resolution must be power of 2');
+
             assert(s > 0 && (s % pool_key.tick_spacing == 0), 's must divide by tick_spacing');
-            assert((2 * s) / res != 0, 'step must be non-zero');
+            assert((s / res) != 0, 'step must be non-zero');
+            assert((s % res) == 0, 'step must be div by resolution');
+            assert((s / res) % pool_key.tick_spacing == 0, 'step must div by tick_spacing');
+
+            assert(tick_start < tick_max, 'tick_start must be < tick_max');
+            assert(tick_start.mag % pool_key.tick_spacing == 0, 'tick_start must div by spacing');
+            assert(tick_max.mag % pool_key.tick_spacing == 0, 'tick_max must div by spacing');
+
+            let dt = i129 { mag: pool_key.tick_spacing, sign: false };
+            assert(tick_start >= MIN_TICK, 'tick_start must be >= min');
+            assert(tick_max <= MAX_TICK - dt, 'tick_max must be <= max');
 
             self.grid.write(pool_key, (s, res, tick_start, tick_max));
         }

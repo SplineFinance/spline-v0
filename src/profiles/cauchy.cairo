@@ -24,9 +24,6 @@ pub mod CauchyLiquidityProfile {
     const PI_NUM_U256: u256 = 355;
     const PI_DENOM_U256: u256 = 113;
 
-    const MIN_TICK: i129 = i129 { mag: 88722883, sign: true };
-    const MAX_TICK: i129 = i129 { mag: 88722883, sign: false };
-
     #[abi(embed_v0)]
     impl SymmetricLiquidityProfileImpl =
         SymmetricLiquidityProfileComponent::SymmetricLiquidityProfile<ContractState>;
@@ -114,10 +111,16 @@ pub mod CauchyLiquidityProfile {
             // full range constant base liquidity, defined by tick = rho on cauchy liquidity
             // distribution
             let (_, mu, gamma, rho) = self.params.read(pool_key);
-            let lower_fr: i129 = MIN_TICK
-                + i129 { mag: MIN_TICK.mag % pool_key.tick_spacing, sign: false };
-            let upper_fr: i129 = MAX_TICK
-                - i129 { mag: MAX_TICK.mag % pool_key.tick_spacing, sign: false };
+            let lower_fr: i129 = SymmetricLiquidityProfileComponent::MIN_TICK
+                + i129 {
+                    mag: SymmetricLiquidityProfileComponent::MIN_TICK.mag % pool_key.tick_spacing,
+                    sign: false,
+                };
+            let upper_fr: i129 = SymmetricLiquidityProfileComponent::MAX_TICK
+                - i129 {
+                    mag: SymmetricLiquidityProfileComponent::MAX_TICK.mag % pool_key.tick_spacing,
+                    sign: false,
+                };
 
             let mut updates = array![];
             let liquidity_delta_fr = self
