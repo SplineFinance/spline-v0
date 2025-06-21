@@ -56,14 +56,19 @@ pub fn safe_transfer_from(
         token.contract_address, selector!("transfer_from"), calldata,
     );
     match call_result {
-        Result::Ok(_) => { success = true; },
+        Result::Ok(mut output_span) => {
+            success = Serde::deserialize(ref output_span).expect('DESERIALIZE_RESULT_FAILED');
+        },
         Result::Err(_) => {
             // Fall back to legacy interface (transferFrom)
             let call_result = call_contract_syscall(
                 token.contract_address, selector!("transferFrom"), calldata,
             );
             match call_result {
-                Result::Ok(_) => { success = true; },
+                Result::Ok(mut output_span) => {
+                    success = Serde::deserialize(ref output_span)
+                        .expect('DESERIALIZE_RESULT_FAILED');
+                },
                 Result::Err(_) => { success = false; },
             }
         },
