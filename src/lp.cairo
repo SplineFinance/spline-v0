@@ -640,8 +640,6 @@ pub mod LiquidityProvider {
             let fees_delta = self
                 .update_positions(pool_key, liquidity_fees_delta); // positive as in to core
 
-            // TODO: check protocol fee denom >= 2 there are no edge cases where dont have excess
-            // TODO: check only reverts due to rounding issues with dust
             let mut excess_fees_delta = collected_fees_delta + fees_delta;
             assert(
                 excess_fees_delta.amount0 <= Zero::<i129>::zero(),
