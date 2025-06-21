@@ -103,6 +103,9 @@ pub mod SymmetricLiquidityProfileComponent {
             assert(tick_start >= MIN_TICK, 'tick_start must be >= min');
             assert(tick_max <= MAX_TICK - dt, 'tick_max must be <= max');
 
+            let tick_min = tick_start - (tick_max - tick_start);
+            assert(tick_min >= MIN_TICK, 'tick_min must be >= min');
+
             self.grid.write(pool_key, (s, res, tick_start, tick_max));
         }
 
