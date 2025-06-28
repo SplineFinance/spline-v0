@@ -15,13 +15,29 @@ pub trait ILiquidityProvider<TStorage> {
     /// adds an amount of liquidity factor to pool with ekubo key `pool_key`, minting shares to
     /// caller
     fn add_liquidity(
-        ref self: TStorage, pool_key: ekubo::types::keys::PoolKey, factor: u128,
+        ref self: TStorage,
+        pool_key: ekubo::types::keys::PoolKey,
+        factor: u128,
+        amount0_max: u128,
+        amount1_max: u128,
     ) -> u256;
 
     /// removes an amount of liquidity factor from pool with ekubo key `pool_key`
     fn remove_liquidity(
-        ref self: TStorage, pool_key: ekubo::types::keys::PoolKey, shares: u256,
+        ref self: TStorage,
+        pool_key: ekubo::types::keys::PoolKey,
+        shares: u256,
+        amount0_min: u128,
+        amount1_min: u128,
     ) -> u128;
+
+    /// sweeps any tokens in this contract to recipient. only callable by owner
+    fn sweep(
+        ref self: TStorage,
+        token: starknet::ContractAddress,
+        recipient: starknet::ContractAddress,
+        amount: u256,
+    );
 
     /// returns the ekubo core for pools deployed by this liquidity provider
     fn core(self: @TStorage) -> ekubo::interfaces::core::ICoreDispatcher;
@@ -54,9 +70,7 @@ pub mod LiquidityProvider {
     use core::num::traits::Zero;
     use core::poseidon::poseidon_hash_span;
     use ekubo::components::owned::Owned as OwnedComponent;
-    use ekubo::components::shared_locker::{
-        call_core_with_callback, consume_callback_data, handle_delta,
-    };
+    use ekubo::components::shared_locker::{call_core_with_callback, consume_callback_data};
     use ekubo::components::upgradeable::{IHasInterface, Upgradeable as UpgradeableComponent};
     use ekubo::components::util::serialize;
     use ekubo::interfaces::core::{
@@ -78,8 +92,7 @@ pub mod LiquidityProvider {
     };
     use spline_v0::math::muldiv;
     use spline_v0::profile::{ILiquidityProfileDispatcher, ILiquidityProfileDispatcherTrait};
-    use spline_v0::shared_locker::try_call_core_with_callback;
-    use spline_v0::sweep::SweepableComponent;
+    use spline_v0::shared_locker::{handle_delta, try_call_core_with_callback};
     use spline_v0::token::{
         ILiquidityProviderTokenDispatcher, ILiquidityProviderTokenDispatcherTrait,
     };
@@ -94,6 +107,10 @@ pub mod LiquidityProvider {
 
     // @dev protocol fee denom must be > 1
     const PROTOCOL_FEE_DENOM: u128 = 2; // 50% of total swap fees
+    const MAX_U128: u128 = 340282366920938463463374607431768211455; // 2**128 - 1
+    const MAX_AMOUNTS: Delta = Delta {
+        amount0: i129 { mag: MAX_U128, sign: false }, amount1: i129 { mag: MAX_U128, sign: false },
+    };
 
     component!(path: OwnedComponent, storage: owned, event: OwnedEvent);
     #[abi(embed_v0)]
@@ -103,10 +120,6 @@ pub mod LiquidityProvider {
     component!(path: UpgradeableComponent, storage: upgradeable, event: UpgradeableEvent);
     #[abi(embed_v0)]
     impl UpgradeableImpl = UpgradeableComponent::UpgradeableImpl<ContractState>;
-
-    component!(path: SweepableComponent, storage: sweepable, event: SweepableEvent);
-    #[abi(embed_v0)]
-    impl SweepableImpl = SweepableComponent::Sweepable<ContractState>;
 
     #[storage]
     struct Storage {
@@ -119,8 +132,6 @@ pub mod LiquidityProvider {
         upgradeable: UpgradeableComponent::Storage,
         #[substorage(v0)]
         owned: OwnedComponent::Storage,
-        #[substorage(v0)]
-        sweepable: SweepableComponent::Storage,
     }
 
     #[event]
@@ -130,7 +141,6 @@ pub mod LiquidityProvider {
         #[flat]
         UpgradeableEvent: UpgradeableComponent::Event,
         OwnedEvent: OwnedComponent::Event,
-        SweepableEvent: SweepableComponent::Event,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -218,13 +228,23 @@ pub mod LiquidityProvider {
             let caller = get_caller_address();
             let shares = initial_liquidity_factor.try_into().unwrap();
             call_core_with_callback::<
-                (PoolKey, i129, i129, u256, ContractAddress), (),
-            >(core, @(pool_key, liquidity_factor_delta, Zero::<i129>::zero(), shares, caller));
+                (PoolKey, i129, i129, u256, Delta, ContractAddress), (),
+            >(
+                core,
+                @(
+                    pool_key,
+                    liquidity_factor_delta,
+                    Zero::<i129>::zero(),
+                    shares,
+                    MAX_AMOUNTS,
+                    caller,
+                ),
+            );
 
-            // lock initial minted lp tokens forever in this contract
+            // lock initial minted lp tokens forever in the pool token contract
             let pool_token = self.pool_tokens.read(pool_key);
             ILiquidityProviderTokenDispatcher { contract_address: pool_token }
-                .mint(get_contract_address(), shares);
+                .mint(pool_token, shares);
         }
 
         fn compound_fees(ref self: ContractState, pool_key: PoolKey) -> u128 {
@@ -242,8 +262,18 @@ pub mod LiquidityProvider {
             // use try call core so ignores if fee compounding fails due to e.g. dust fee amounts
             // with rounding issues
             let result: Option<()> = try_call_core_with_callback::<
-                (PoolKey, i129, i129, u256, ContractAddress), (),
-            >(core, @(pool_key, Zero::<i129>::zero(), liquidity_fees_delta, 0, caller));
+                (PoolKey, i129, i129, u256, Delta, ContractAddress), (),
+            >(
+                core,
+                @(
+                    pool_key,
+                    Zero::<i129>::zero(),
+                    liquidity_fees_delta,
+                    0,
+                    Zero::<Delta>::zero(),
+                    caller,
+                ),
+            );
 
             // if core call fails, return 0 as no fees to compound
             if result.is_none() {
@@ -257,7 +287,13 @@ pub mod LiquidityProvider {
             liquidity_fees
         }
 
-        fn add_liquidity(ref self: ContractState, pool_key: PoolKey, factor: u128) -> u256 {
+        fn add_liquidity(
+            ref self: ContractState,
+            pool_key: PoolKey,
+            factor: u128,
+            amount0_max: u128,
+            amount1_max: u128,
+        ) -> u256 {
             // compound fees if possible. also checks pool key and pool initialized
             self.compound_fees(pool_key);
 
@@ -279,8 +315,21 @@ pub mod LiquidityProvider {
             let core = self.core.read();
             let caller = get_caller_address();
             call_core_with_callback::<
-                (PoolKey, i129, i129, u256, ContractAddress), (),
-            >(core, @(pool_key, liquidity_factor_delta, Zero::<i129>::zero(), shares, caller));
+                (PoolKey, i129, i129, u256, Delta, ContractAddress), (),
+            >(
+                core,
+                @(
+                    pool_key,
+                    liquidity_factor_delta,
+                    Zero::<i129>::zero(),
+                    shares,
+                    Delta {
+                        amount0: i129 { mag: amount0_max, sign: false },
+                        amount1: i129 { mag: amount1_max, sign: false },
+                    },
+                    caller,
+                ),
+            );
 
             // mint pool token shares to caller
             ILiquidityProviderTokenDispatcher { contract_address: pool_token }.mint(caller, shares);
@@ -288,7 +337,13 @@ pub mod LiquidityProvider {
             shares
         }
 
-        fn remove_liquidity(ref self: ContractState, pool_key: PoolKey, shares: u256) -> u128 {
+        fn remove_liquidity(
+            ref self: ContractState,
+            pool_key: PoolKey,
+            shares: u256,
+            amount0_min: u128,
+            amount1_min: u128,
+        ) -> u128 {
             // compound fees if possible. also checks pool key and pool initialized
             self.compound_fees(pool_key);
 
@@ -313,10 +368,33 @@ pub mod LiquidityProvider {
             // obtain core lock. should also effectively lock this contract for unique pool key
             let core = self.core.read();
             call_core_with_callback::<
-                (PoolKey, i129, i129, u256, ContractAddress), (),
-            >(core, @(pool_key, liquidity_factor_delta, Zero::<i129>::zero(), shares, caller));
+                (PoolKey, i129, i129, u256, Delta, ContractAddress), (),
+            >(
+                core,
+                @(
+                    pool_key,
+                    liquidity_factor_delta,
+                    Zero::<i129>::zero(),
+                    shares,
+                    Delta {
+                        amount0: i129 { mag: amount0_min, sign: true },
+                        amount1: i129 { mag: amount1_min, sign: true },
+                    },
+                    caller,
+                ),
+            );
 
             factor
+        }
+
+        fn sweep(
+            ref self: ContractState,
+            token: starknet::ContractAddress,
+            recipient: starknet::ContractAddress,
+            amount: u256,
+        ) {
+            self.require_owner();
+            IERC20Dispatcher { contract_address: token }.transfer(recipient, amount);
         }
 
         fn core(self: @ContractState) -> ICoreDispatcher {
@@ -562,8 +640,6 @@ pub mod LiquidityProvider {
             let fees_delta = self
                 .update_positions(pool_key, liquidity_fees_delta); // positive as in to core
 
-            // TODO: check protocol fee denom >= 2 there are no edge cases where dont have excess
-            // TODO: check only reverts due to rounding issues with dust
             let mut excess_fees_delta = collected_fees_delta + fees_delta;
             assert(
                 excess_fees_delta.amount0 <= Zero::<i129>::zero(),
@@ -624,9 +700,16 @@ pub mod LiquidityProvider {
     impl LockedImpl of ILocker<ContractState> {
         fn locked(ref self: ContractState, id: u32, data: Span<felt252>) -> Span<felt252> {
             let core = self.core.read();
-            let (pool_key, liquidity_factor_delta, liquidity_fees_delta, shares, caller) =
+            let (
+                pool_key,
+                liquidity_factor_delta,
+                liquidity_fees_delta,
+                shares,
+                amounts_limit,
+                caller,
+            ) =
                 consume_callback_data::<
-                (PoolKey, i129, i129, u256, ContractAddress),
+                (PoolKey, i129, i129, u256, Delta, ContractAddress),
             >(core, data);
 
             // harvest fees from core
@@ -634,6 +717,16 @@ pub mod LiquidityProvider {
 
             // modify liquidity profile positions on ekubo core
             let balance_delta = self.update_positions(pool_key, liquidity_factor_delta);
+
+            // check slippage limits if liquidity factor delta is non-zero
+            assert(
+                liquidity_factor_delta.is_zero() || balance_delta.amount0 <= amounts_limit.amount0,
+                'Slippage exceeded on amount0',
+            );
+            assert(
+                liquidity_factor_delta.is_zero() || balance_delta.amount1 <= amounts_limit.amount1,
+                'Slippage exceeded on amount1',
+            );
 
             // settle up balance deltas with core
             handle_delta(core, pool_key.token0, balance_delta.amount0, caller);

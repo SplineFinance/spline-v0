@@ -15,7 +15,6 @@ use spline_v0::profile::{
     ILiquidityProfile, ILiquidityProfileDispatcher, ILiquidityProfileDispatcherTrait,
 };
 use spline_v0::profiles::cauchy::CauchyLiquidityProfile;
-use spline_v0::sweep::{ISweepableDispatcher, ISweepableDispatcherTrait};
 use spline_v0::token::{ILiquidityProviderTokenDispatcher, ILiquidityProviderTokenDispatcherTrait};
 use starknet::{ClassHash, ContractAddress, contract_address_const, get_contract_address};
 
@@ -229,6 +228,10 @@ fn one() -> u256 {
     1000000000000000000 // one == 1e18
 }
 
+fn max_u128() -> u128 {
+    340282366920938463463374607431768211455 // 2**128 - 1
+}
+
 fn assert_close(a: i129, b: i129, tol: u256) {
     assert_eq!(a.sign, b.sign, "Signs are different");
     let (min, max): (u256, u256) = if a.mag > b.mag {
@@ -351,8 +354,23 @@ fn setup_with_liquidity_provider() -> (
         contract_address: deploy_contract(contract_class, constructor_calldata),
     };
 
-    token0.approve(lp.contract_address, 0xffffffffffffffffffffffffffffffff);
-    token1.approve(lp.contract_address, 0xffffffffffffffffffffffffffffffff);
+    // allow lp to spend tokens from this address
+    assert(
+        token0
+            .approve(
+                lp.contract_address,
+                0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff,
+            ),
+        'token0 approve failed',
+    );
+    assert(
+        token1
+            .approve(
+                lp.contract_address,
+                0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff,
+            ),
+        'token1 approve failed',
+    );
 
     let new_pool_key = PoolKey {
         token0: pool_key.token0,
@@ -372,12 +390,7 @@ fn test_create_and_initialize_pool_with_cauchy_profile() {
     let initial_tick = i129 { mag: 0, sign: false };
     // roughly given initial tick = 0. there should be excess in the lp contract after
     // @dev quoter to fix this amount excess issue
-    let amount: u128 = 1000000000000000000;
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
-
     lp.create_and_initialize_pool(pool_key, initial_tick, params);
-
     let core = ekubo_core();
     let liquidity = core.get_pool_liquidity(pool_key);
 
@@ -425,14 +438,11 @@ fn test_add_liquidity_with_cauchy_profile() {
     let initial_tick = i129 { mag: 0, sign: false };
     // roughly given initial tick = 0. there should be excess in the lp contract after
     // @dev quoter to fix this amount excess issue
-    let amount: u128 = 100000000000000000000; // 100 * 1e18
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
     lp.create_and_initialize_pool(pool_key, initial_tick, params);
 
     // add liquidity
     let factor = 99000000000000000000; // 99 * 1e18
-    let shares: u256 = lp.add_liquidity(pool_key, factor);
+    let shares: u256 = lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
     assert_eq!(shares, 99000000000000000000);
 
     let core = ekubo_core();
@@ -472,18 +482,15 @@ fn test_remove_liquidity_with_cauchy_profile() {
     let initial_tick = i129 { mag: 0, sign: false };
     // roughly given initial tick = 0. there should be excess in the lp contract after
     // @dev quoter to fix this amount excess issue
-    let amount: u128 = 100000000000000000000; // 100 * 1e18
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
     lp.create_and_initialize_pool(pool_key, initial_tick, params);
 
     // add liquidity
     let factor = 99000000000000000000; // 99 * 1e18
-    lp.add_liquidity(pool_key, factor);
+    lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
 
     // remove liquidity
     let shares_removed: u256 = 10000000000000000000; // 10 * 1e18 (10% of total shares)
-    let factor_removed: u128 = lp.remove_liquidity(pool_key, shares_removed);
+    let factor_removed: u128 = lp.remove_liquidity(pool_key, shares_removed, 0, 0);
     assert_eq!(factor_removed, 10000000000000000000);
 
     let core = ekubo_core();
@@ -523,21 +530,12 @@ fn test_swap_with_cauchy_profile() {
     let initial_tick = i129 { mag: 0, sign: false };
     // roughly given initial tick = 0. there should be excess in the lp contract after
     // @dev quoter to fix this amount excess issue
-    let amount: u128 = 10000000000000000000000; // 10_000 * 1e18
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
     lp.create_and_initialize_pool(pool_key, initial_tick, params);
 
     // add liquidity
     let factor =
         10000000000000000000000000000; // 10_000_000_000 * 1e18 for ~ (1000, 1000) in (x, y) reserves
-    lp.add_liquidity(pool_key, factor);
-
-    // get the excess tokens back for swapping
-    ISweepableDispatcher { contract_address: lp.contract_address }
-        .sweep(pool_key.token0, get_contract_address(), 0);
-    ISweepableDispatcher { contract_address: lp.contract_address }
-        .sweep(pool_key.token1, get_contract_address(), 0);
+    lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
 
     // swap  50% of y reserves into pool
     let buy_token = IERC20Dispatcher { contract_address: token1.contract_address };
@@ -589,21 +587,12 @@ fn test_harvest_fees_on_add_liquidity_with_cauchy_profile() {
     let initial_tick = i129 { mag: 0, sign: false };
     // roughly given initial tick = 0. there should be excess in the lp contract after
     // @dev quoter to fix this amount excess issue
-    let amount: u128 = 10000000000000000000000; // 10_000 * 1e18
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
     lp.create_and_initialize_pool(pool_key, initial_tick, params);
 
     // add liquidity
     let factor =
         9999999999000000000000000000; // 9_999_999_999 * 1e18 for ~ (1000, 1000) in (x, y) reserves
-    lp.add_liquidity(pool_key, factor);
-
-    // get the excess tokens back for swapping
-    ISweepableDispatcher { contract_address: lp.contract_address }
-        .sweep(pool_key.token0, get_contract_address(), 0);
-    ISweepableDispatcher { contract_address: lp.contract_address }
-        .sweep(pool_key.token1, get_contract_address(), 0);
+    lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
 
     let n: u8 = 2;
     for i in 0..n {
@@ -683,9 +672,7 @@ fn test_harvest_fees_on_add_liquidity_with_cauchy_profile() {
         .unwrap();
 
     // add the extra liquidity
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
-    let shares = lp.add_liquidity(pool_key, factor);
+    let shares = lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
     assert_lt!(shares, factor.into());
 
     let liquidity_factor_after = lp.pool_liquidity_factor(pool_key);
@@ -746,21 +733,12 @@ fn test_harvest_fees_on_remove_liquidity_with_cauchy_profile() {
     let initial_tick = i129 { mag: 0, sign: false };
     // roughly given initial tick = 0. there should be excess in the lp contract after
     // @dev quoter to fix this amount excess issue
-    let amount: u128 = 10000000000000000000000; // 10_000 * 1e18
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
     lp.create_and_initialize_pool(pool_key, initial_tick, params);
 
     // add liquidity
     let factor =
         9999999999000000000000000000; // 9_999_999_999 * 1e18 for ~ (1000, 1000) in (x, y) reserves
-    lp.add_liquidity(pool_key, factor);
-
-    // get the excess tokens back for swapping
-    ISweepableDispatcher { contract_address: lp.contract_address }
-        .sweep(pool_key.token0, get_contract_address(), 0);
-    ISweepableDispatcher { contract_address: lp.contract_address }
-        .sweep(pool_key.token1, get_contract_address(), 0);
+    lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
 
     let n: u8 = 2;
     for i in 0..n {
@@ -841,7 +819,7 @@ fn test_harvest_fees_on_remove_liquidity_with_cauchy_profile() {
 
     // remove some liquidity
     let shares = total_shares / 2;
-    let factor_removed = lp.remove_liquidity(pool_key, shares);
+    let factor_removed = lp.remove_liquidity(pool_key, shares, 0, 0);
     assert_lt!(shares, factor_removed.into());
 
     let liquidity_factor_after = lp.pool_liquidity_factor(pool_key);

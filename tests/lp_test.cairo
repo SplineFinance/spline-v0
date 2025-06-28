@@ -23,7 +23,6 @@ use spline_v0::lp::{
 };
 use spline_v0::math::muldiv;
 use spline_v0::profile::{ILiquidityProfileDispatcher, ILiquidityProfileDispatcherTrait};
-use spline_v0::sweep::{ISweepableDispatcher, ISweepableDispatcherTrait};
 use spline_v0::token::{ILiquidityProviderTokenDispatcher, ILiquidityProviderTokenDispatcherTrait};
 use starknet::{ClassHash, ContractAddress, contract_address_const, get_contract_address};
 
@@ -122,14 +121,28 @@ fn setup() -> (
         deploy_token(token_class, "Token B", "B", owner, 0xffffffffffffffffffffffffffffffff),
     );
 
-    tokenA.approve(lp.contract_address, 0xffffffffffffffffffffffffffffffff);
-    tokenB.approve(lp.contract_address, 0xffffffffffffffffffffffffffffffff);
-
     let (token0, token1) = if (tokenA.contract_address < tokenB.contract_address) {
         (tokenA, tokenB)
     } else {
         (tokenB, tokenA)
     };
+
+    assert(
+        token0
+            .approve(
+                lp.contract_address,
+                0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff,
+            ),
+        'token0 approve failed',
+    );
+    assert(
+        token1
+            .approve(
+                lp.contract_address,
+                0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff,
+            ),
+        'token1 approve failed',
+    );
 
     let pool_key = PoolKey {
         token0: token0.contract_address,
@@ -186,15 +199,7 @@ fn test_initialize_pool_fails_if_not_extension() {
 #[fork("mainnet")]
 fn test_create_and_initialize_pool_sets_liquidity_profile() {
     let (pool_key, lp, _, profile, default_profile_params, token0, token1) = setup();
-    let step = *default_profile_params[2];
-    let n = *default_profile_params[3];
     let initial_tick = i129 { mag: 0, sign: false };
-    // roughly given initial tick = 0. there should be excess in the lp contract after
-    // @dev quoter to fix this amount excess issue
-    let amount: u128 = (step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
-
     lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
     assert_eq!(profile.get_liquidity_profile(pool_key), default_profile_params);
 }
@@ -203,15 +208,7 @@ fn test_create_and_initialize_pool_sets_liquidity_profile() {
 #[fork("mainnet")]
 fn test_create_and_initialize_pool_deploys_pool_token() {
     let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
-    let step = *default_profile_params[2];
-    let n = *default_profile_params[3];
     let initial_tick = i129 { mag: 0, sign: false };
-    // roughly given initial tick = 0. there should be excess in the lp contract after
-    // @dev quoter to fix this amount excess issue
-    let amount: u128 = (step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
-
     assert_eq!(lp.pool_token(pool_key), Zero::<ContractAddress>::zero());
     lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
     let pool_token = lp.pool_token(pool_key);
@@ -225,15 +222,7 @@ fn test_create_and_initialize_pool_deploys_pool_token() {
 #[fork("mainnet")]
 fn test_multiple_create_and_initialize_pool_deploys_multiple_pool_tokens() {
     let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
-    let step = *default_profile_params[2];
-    let n = *default_profile_params[3];
     let initial_tick = i129 { mag: 0, sign: false };
-    // roughly given initial tick = 0. there should be excess in the lp contract after
-    // @dev quoter to fix this amount excess issue
-    let amount: u128 = (2 * step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
-
     assert_eq!(lp.pool_token(pool_key), Zero::<ContractAddress>::zero());
     lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
     let pool_token = lp.pool_token(pool_key);
@@ -263,14 +252,7 @@ fn test_multiple_create_and_initialize_pool_deploys_multiple_pool_tokens() {
 #[fork("mainnet")]
 fn test_create_and_initialize_pool_initializes_pool() {
     let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
-    let step = *default_profile_params[2];
-    let n = *default_profile_params[3];
     let initial_tick = i129 { mag: 100, sign: false };
-    // roughly given initial tick = 0. there should be excess in the lp contract after
-    // @dev quoter to fix this amount excess issue
-    let amount: u128 = (step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
 
     let core = ekubo_core();
     let price: PoolPrice = core.get_pool_price(pool_key);
@@ -341,13 +323,6 @@ fn test_create_and_initialize_pool_adds_initial_liquidity_to_pool() {
         let position = core.get_position(pool_key, position_key);
         assert_eq!(position.liquidity, 0);
     }
-
-    // roughly given initial tick = 0. there should be excess in the lp contract after
-    // @dev quoter to fix this amount excess issue
-    let amount: u128 = (step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
-
     lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
 
     // check no liquidity at expected profile ticks
@@ -376,58 +351,41 @@ fn test_create_and_initialize_pool_transfers_funds_to_pool() {
     // roughly given initial tick = 0. there should be excess in the lp contract after
     // @dev quoter to fix this amount excess issue
     let amount: u128 = (step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
-    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
-    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
-
     let ekubo_balance0 = token0.balance_of(core.contract_address);
     let ekubo_balance1 = token1.balance_of(core.contract_address);
 
+    let balance0_before: u256 = token0.balance_of(get_contract_address());
+    let balance1_before: u256 = token1.balance_of(get_contract_address());
+
     lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
 
-    let (balance0, balance1) = (
-        token0.balance_of(lp.contract_address), token1.balance_of(lp.contract_address),
-    );
-    assert_lt!(balance0, amount.into() / 10); // less than 10% left of dust
-    assert_lt!(balance1, amount.into() / 10); // less than 10% left of dust
+    let balance0_after: u256 = token0.balance_of(get_contract_address());
+    let balance1_after: u256 = token1.balance_of(get_contract_address());
+
+    let amount0_transferred: u256 = balance0_before - balance0_after;
+    let amount1_transferred: u256 = balance1_before - balance1_after;
 
     let (ekubo_balance0_after, ekubo_balance1_after) = (
         token0.balance_of(core.contract_address), token1.balance_of(core.contract_address),
     );
-    assert_eq!(ekubo_balance0_after, ekubo_balance0 + amount.into() - balance0);
-    assert_eq!(ekubo_balance1_after, ekubo_balance1 + amount.into() - balance1);
-
-    // sweep and check that no dust left
-    ISweepableDispatcher { contract_address: lp.contract_address }
-        .sweep(token0.contract_address, get_contract_address(), 0);
-    ISweepableDispatcher { contract_address: lp.contract_address }
-        .sweep(token1.contract_address, get_contract_address(), 0);
-    assert_eq!(token0.balance_of(lp.contract_address), 0);
-    assert_eq!(token1.balance_of(lp.contract_address), 0);
+    assert_eq!(ekubo_balance0_after, ekubo_balance0 + amount0_transferred);
+    assert_eq!(ekubo_balance1_after, ekubo_balance1 + amount1_transferred);
 }
 
 #[test]
 #[fork("mainnet")]
-fn test_create_and_initialize_pool_mints_initial_shares_to_liquidity_provider() {
+fn test_create_and_initialize_pool_mints_initial_shares_to_lp_token() {
     let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
 
     let initial_liquidity_factor = *default_profile_params[0];
-    let step = *default_profile_params[2];
-    let n = *default_profile_params[3];
     let initial_tick = i129 { mag: 0, sign: false };
-    // roughly given initial tick = 0. there should be excess in the lp contract after
-    // @dev quoter to fix this amount excess issue
-    let amount: u128 = (step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
-    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
-    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
 
     lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
 
     let pool_token = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) };
-    assert_eq!(pool_token.balance_of(lp.contract_address), initial_liquidity_factor.mag.into());
+    assert_eq!(
+        pool_token.balance_of(pool_token.contract_address), initial_liquidity_factor.mag.into(),
+    );
     assert_eq!(pool_token.total_supply(), initial_liquidity_factor.mag.into());
 }
 
@@ -435,19 +393,8 @@ fn test_create_and_initialize_pool_mints_initial_shares_to_liquidity_provider() 
 #[fork("mainnet")]
 fn test_create_and_initialize_pool_sets_initial_liquidity_factor() {
     let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
-
     let initial_liquidity_factor = *default_profile_params[0];
-    let step = *default_profile_params[2];
-    let n = *default_profile_params[3];
     let initial_tick = i129 { mag: 0, sign: false };
-    // roughly given initial tick = 0. there should be excess in the lp contract after
-    // @dev quoter to fix this amount excess issue
-    let amount: u128 = (step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
-    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
-    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
-
     assert_eq!(lp.pool_liquidity_factor(pool_key), 0);
     lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
     assert_eq!(lp.pool_liquidity_factor(pool_key), initial_liquidity_factor.mag);
@@ -460,24 +407,21 @@ fn test_create_and_initialize_pool_updates_pool_reserves() {
     let step = *default_profile_params[2];
     let n = *default_profile_params[3];
     let initial_tick = i129 { mag: 0, sign: false };
-    // roughly given initial tick = 0. there should be excess in the lp contract after
-    // @dev quoter to fix this amount excess issue
-    let amount: u128 = (step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
-    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
-    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
 
     let (reserves0, reserves1) = lp.pool_reserves(pool_key);
     assert_eq!(reserves0, 0);
     assert_eq!(reserves1, 0);
 
+    let balance0_before: u256 = token0.balance_of(get_contract_address());
+    let balance1_before: u256 = token1.balance_of(get_contract_address());
+
     lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
 
-    let balance0: u256 = token0.balance_of(lp.contract_address);
-    let balance1: u256 = token1.balance_of(lp.contract_address);
-    let amount0_transferred: u256 = amount.into() - balance0;
-    let amount1_transferred: u256 = amount.into() - balance1;
+    let balance0_after: u256 = token0.balance_of(get_contract_address());
+    let balance1_after: u256 = token1.balance_of(get_contract_address());
+
+    let amount0_transferred: u256 = balance0_before - balance0_after;
+    let amount1_transferred: u256 = balance1_before - balance1_after;
 
     let (reserves0_after, reserves1_after) = lp.pool_reserves(pool_key);
     assert_close(reserves0_after.into(), reserves0.into() + amount0_transferred, one() / 1000000);
@@ -493,13 +437,7 @@ fn test_create_and_initialize_pool_updates_pool_reserves() {
 fn test_create_and_initialize_pool_emits_liquidity_updated_event() {
     let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
     let initial_tick = i129 { mag: 0, sign: false };
-
     let initial_liquidity_factor = *default_profile_params[0];
-    let step = *default_profile_params[2];
-    let n = *default_profile_params[3];
-    let amount: u128 = (step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
 
     let core = ekubo_core();
     let core_balance0 = token0.balance_of(core.contract_address);
@@ -556,15 +494,8 @@ fn test_create_and_initialize_pool_fails_if_not_owner() {
 #[should_panic(expected: ('Pool token already deployed',))]
 fn test_create_and_initialize_pool_fails_if_already_initialized() {
     let (pool_key, lp, _, _, default_profile_params, token0, token1) = setup();
-
     let initial_tick = i129 { mag: 0, sign: false };
-    let step = *default_profile_params[2];
-    let n = *default_profile_params[3];
-    let amount: u128 = (step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
     lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
-
     // should fail on second time
     lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
 }
@@ -596,18 +527,7 @@ fn setup_add_liquidity() -> (
 ) {
     let (pool_key, lp, owner, profile, default_profile_params, token0, token1) = setup();
     let initial_tick = i129 { mag: 0, sign: false };
-    let step = *default_profile_params[2];
-    let n = *default_profile_params[3];
-    let initial_amount: u128 = (step.mag * n.mag * (*default_profile_params[0].mag)) / (1900000);
-    token0.transfer(lp.contract_address, initial_amount.into());
-    token1.transfer(lp.contract_address, initial_amount.into());
-    assert_eq!(token0.balance_of(lp.contract_address), initial_amount.into());
-    assert_eq!(token1.balance_of(lp.contract_address), initial_amount.into());
     lp.create_and_initialize_pool(pool_key, initial_tick, default_profile_params);
-    ISweepableDispatcher { contract_address: lp.contract_address }
-        .sweep(token0.contract_address, get_contract_address(), 0);
-    ISweepableDispatcher { contract_address: lp.contract_address }
-        .sweep(token1.contract_address, get_contract_address(), 0);
     (pool_key, lp, owner, profile, default_profile_params, token0, token1)
 }
 
@@ -618,17 +538,9 @@ fn test_add_liquidity_updates_liquidity_factor() {
     let initial_liquidity_factor = lp.pool_liquidity_factor(pool_key);
     assert_eq!(initial_liquidity_factor, 1000000000000000000);
 
-    let step = *default_profile_params[2];
-    let n = *default_profile_params[3];
-    let factor = 100000000000000000000; // 100 * 1e18
-    let amount: u128 = (step.mag * n.mag * (factor)) / (1900000);
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
-    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
-    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
-
     // now add more liquidity
-    lp.add_liquidity(pool_key, factor);
+    let factor = 100000000000000000000; // 100 * 1e18
+    lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
     assert_eq!(lp.pool_liquidity_factor(pool_key), initial_liquidity_factor + factor);
 }
 
@@ -639,25 +551,17 @@ fn test_add_liquidity_mints_shares() {
     let initial_liquidity_factor = lp.pool_liquidity_factor(pool_key);
     assert_eq!(initial_liquidity_factor, 1000000000000000000);
 
-    let step = *default_profile_params[2];
-    let n = *default_profile_params[3];
-    let factor = 100000000000000000000; // 100 * 1e18
-    let amount: u128 = (step.mag * n.mag * (factor)) / (1900000);
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
-    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
-    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
-
     // state prior after create and initialize pool
+    let factor = 100000000000000000000; // 100 * 1e18
     let pool_token: IERC20Dispatcher = IERC20Dispatcher {
         contract_address: lp.pool_token(pool_key),
     };
     let total_shares = pool_token.total_supply(); // 1e18 given initial liquidity factor of 1e18
-    assert_eq!(pool_token.balance_of(lp.contract_address), total_shares);
+    assert_eq!(pool_token.balance_of(pool_token.contract_address), total_shares);
 
     // now add more liquidity
     let shares = 100000000000000000000; // 100 * 1e18 given initial liquidity factor of 1e18
-    assert_eq!(lp.add_liquidity(pool_key, factor), shares);
+    assert_eq!(lp.add_liquidity(pool_key, factor, max_u128(), max_u128()), shares);
     assert_eq!(pool_token.balance_of(get_contract_address()), shares);
     assert_eq!(pool_token.total_supply(), total_shares + shares);
 }
@@ -669,27 +573,18 @@ fn test_add_liquidity_multiple_mints_shares() {
     let initial_liquidity_factor = lp.pool_liquidity_factor(pool_key);
     assert_eq!(initial_liquidity_factor, 1000000000000000000);
 
-    let step = *default_profile_params[2];
-    let n = *default_profile_params[3];
     let factor = 100000000000000000000; // 100 * 1e18
-    let amount: u128 = (3 * step.mag * n.mag * (factor))
-        / (1900000); // 3x usual given multiple mints below
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
-    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
-    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
-
     // state prior after create and initialize pool
     let pool_token: IERC20Dispatcher = IERC20Dispatcher {
         contract_address: lp.pool_token(pool_key),
     };
     let total_shares = pool_token.total_supply(); // 1e18 given initial liquidity factor of 1e18
-    assert_eq!(pool_token.balance_of(lp.contract_address), total_shares);
+    assert_eq!(pool_token.balance_of(pool_token.contract_address), total_shares);
 
     // now add more liquidity
     let shares = 100000000000000000000; // 100 * 1e18 given initial liquidity factor of 1e18
-    let result_first: u256 = lp.add_liquidity(pool_key, factor);
-    let result_second: u256 = lp.add_liquidity(pool_key, 2 * factor);
+    let result_first: u256 = lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
+    let result_second: u256 = lp.add_liquidity(pool_key, 2 * factor, max_u128(), max_u128());
     assert_eq!(result_first, shares);
     assert_eq!(result_second, 2 * shares);
     assert_eq!(pool_token.balance_of(get_contract_address()), 3 * shares);
@@ -792,18 +687,10 @@ fn test_add_liquidity_adds_liquidity_to_pool() {
         assert_eq!(position.liquidity, *update.liquidity_delta.mag);
     }
 
-    let amount: u128 = (3 * step.mag * n.mag * (factor))
-        / (1900000); // 3x usual given multiple mints below
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
-    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
-    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
-
     // now add the liquidity
-    lp.add_liquidity(pool_key, factor);
+    lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
 
     // TODO: check why provider getter not working as expected in test (but works in contract)
-
     // check liquidity at expected profile ticks according to test profile
     let mut j = 0;
     for update in liquidity_updates {
@@ -832,37 +719,27 @@ fn test_add_liquidity_transfers_funds_to_pool() {
     let n = *default_profile_params[3];
     let factor = 100000000000000000000; // 100 * 1e18
     let amount: u128 = (step.mag * n.mag * (factor)) / (1900000);
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
-
-    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
-    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
 
     let core = ekubo_core();
     let ekubo_balance0: u256 = token0.balance_of(core.contract_address);
     let ekubo_balance1: u256 = token1.balance_of(core.contract_address);
 
-    lp.add_liquidity(pool_key, factor);
+    let balance0_before: u256 = token0.balance_of(get_contract_address());
+    let balance1_before: u256 = token1.balance_of(get_contract_address());
 
-    let (balance0, balance1) = (
-        token0.balance_of(lp.contract_address), token1.balance_of(lp.contract_address),
-    );
-    assert_lt!(balance0, amount.into() / 10); // less than 10% left of dust
-    assert_lt!(balance1, amount.into() / 10); // less than 10% left of dust
+    lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
+
+    let balance0_after: u256 = token0.balance_of(get_contract_address());
+    let balance1_after: u256 = token1.balance_of(get_contract_address());
+
+    let amount0_transferred: u256 = balance0_before - balance0_after;
+    let amount1_transferred: u256 = balance1_before - balance1_after;
 
     let (ekubo_balance0_after, ekubo_balance1_after) = (
         token0.balance_of(core.contract_address), token1.balance_of(core.contract_address),
     );
-    assert_eq!(ekubo_balance0_after, ekubo_balance0 + amount.into() - balance0);
-    assert_eq!(ekubo_balance1_after, ekubo_balance1 + amount.into() - balance1);
-
-    // sweep and check that no dust left
-    ISweepableDispatcher { contract_address: lp.contract_address }
-        .sweep(token0.contract_address, get_contract_address(), 0);
-    ISweepableDispatcher { contract_address: lp.contract_address }
-        .sweep(token1.contract_address, get_contract_address(), 0);
-    assert_eq!(token0.balance_of(lp.contract_address), 0);
-    assert_eq!(token1.balance_of(lp.contract_address), 0);
+    assert_eq!(ekubo_balance0_after, ekubo_balance0 + amount0_transferred);
+    assert_eq!(ekubo_balance1_after, ekubo_balance1 + amount1_transferred);
 }
 
 #[test]
@@ -875,20 +752,18 @@ fn test_add_liquidity_updates_pool_reserves() {
     let step = *default_profile_params[2];
     let n = *default_profile_params[3];
     let factor = 100000000000000000000; // 100 * 1e18
-    let amount: u128 = (step.mag * n.mag * (factor)) / (1900000);
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
-    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
-    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
-
     let (reserves0, reserves1) = lp.pool_reserves(pool_key);
 
-    lp.add_liquidity(pool_key, factor);
+    let balance0_before: u256 = token0.balance_of(get_contract_address());
+    let balance1_before: u256 = token1.balance_of(get_contract_address());
 
-    let balance0: u256 = token0.balance_of(lp.contract_address);
-    let balance1: u256 = token1.balance_of(lp.contract_address);
-    let amount0_transferred: u256 = amount.into() - balance0;
-    let amount1_transferred: u256 = amount.into() - balance1;
+    lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
+
+    let balance0_after: u256 = token0.balance_of(get_contract_address());
+    let balance1_after: u256 = token1.balance_of(get_contract_address());
+
+    let amount0_transferred: u256 = balance0_before - balance0_after;
+    let amount1_transferred: u256 = balance1_before - balance1_after;
 
     let (reserves0_after, reserves1_after) = lp.pool_reserves(pool_key);
     assert_close(reserves0_after.into(), reserves0.into() + amount0_transferred, one() / 1000000);
@@ -902,21 +777,13 @@ fn test_add_liquidity_emits_liquidity_updated_event() {
     let initial_liquidity_factor = lp.pool_liquidity_factor(pool_key);
     assert_eq!(initial_liquidity_factor, 1000000000000000000);
 
-    let step = *default_profile_params[2];
-    let n = *default_profile_params[3];
     let factor = 100000000000000000000; // 100 * 1e18
-    let amount: u128 = (step.mag * n.mag * (factor)) / (1900000);
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
-    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
-    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
-
     let core = ekubo_core();
     let balance0_before = token0.balance_of(core.contract_address);
     let balance1_before = token1.balance_of(core.contract_address);
 
     let mut spy = spy_events();
-    let shares = lp.add_liquidity(pool_key, factor);
+    let shares = lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
 
     let balance0_after = token0.balance_of(core.contract_address);
     let balance1_after = token1.balance_of(core.contract_address);
@@ -963,7 +830,7 @@ fn test_add_liquidity_fails_if_extension_not_liquidity_provider() {
         tick_spacing: 1, // 0.01 bps
         extension: Zero::<ContractAddress>::zero(),
     };
-    lp.add_liquidity(pool_key, 100000000000000000000);
+    lp.add_liquidity(pool_key, 100000000000000000000, max_u128(), max_u128());
 }
 
 #[test]
@@ -971,7 +838,7 @@ fn test_add_liquidity_fails_if_extension_not_liquidity_provider() {
 #[should_panic(expected: ('Pool token not deployed',))]
 fn test_add_liquidity_fails_if_not_initialized() {
     let (pool_key, lp, _, _, _, _, _) = setup();
-    lp.add_liquidity(pool_key, 100000000000000000000);
+    lp.add_liquidity(pool_key, 100000000000000000000, max_u128(), max_u128());
 }
 
 #[test]
@@ -998,13 +865,8 @@ fn setup_remove_liquidity() -> (
 ) {
     let (pool_key, lp, owner, profile, default_profile_params, token0, token1) =
         setup_add_liquidity();
-    let step = *default_profile_params[2];
-    let n = *default_profile_params[3];
     let factor = 100000000000000000000; // 100 * 1e18
-    let amount: u128 = (step.mag * n.mag * (factor)) / (1900000);
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
-    lp.add_liquidity(pool_key, factor);
+    lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
     (pool_key, lp, owner, profile, default_profile_params, token0, token1)
 }
 
@@ -1018,7 +880,7 @@ fn test_remove_liquidity_updates_liquidity_factor() {
 
     let liquidity_factor_before: u128 = lp.pool_liquidity_factor(pool_key);
     let liquidity_factor_removed: u128 = 25000000000000000000;
-    assert_eq!(lp.remove_liquidity(pool_key, shares_removed), liquidity_factor_removed);
+    assert_eq!(lp.remove_liquidity(pool_key, shares_removed, 0, 0), liquidity_factor_removed);
     assert_eq!(
         lp.pool_liquidity_factor(pool_key), liquidity_factor_before - liquidity_factor_removed,
     );
@@ -1034,7 +896,7 @@ fn test_remove_liquidity_burns_shares() {
 
     let total_supply_before = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
         .total_supply();
-    lp.remove_liquidity(pool_key, shares_removed);
+    lp.remove_liquidity(pool_key, shares_removed, 0, 0);
 
     let total_supply_after = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
         .total_supply();
@@ -1146,7 +1008,7 @@ fn test_remove_liquidity_removes_liquidity_from_pool() {
     }
 
     // now remove the liquidity
-    lp.remove_liquidity(pool_key, shares_removed);
+    lp.remove_liquidity(pool_key, shares_removed, 0, 0);
 
     // TODO: check why provider getter not working as expected in test (but works in contract)
 
@@ -1183,7 +1045,7 @@ fn test_remove_liquidity_transfers_funds_from_pool() {
         token0.balance_of(get_contract_address()), token1.balance_of(get_contract_address()),
     );
 
-    lp.remove_liquidity(pool_key, shares_removed);
+    lp.remove_liquidity(pool_key, shares_removed, 0, 0);
 
     let (ekubo_balance0_after, ekubo_balance1_after) = (
         token0.balance_of(core.contract_address), token1.balance_of(core.contract_address),
@@ -1218,7 +1080,7 @@ fn test_remove_liquidity_updates_pool_reserves() {
     );
     let (reserves0_before, reserves1_before) = lp.pool_reserves(pool_key);
 
-    lp.remove_liquidity(pool_key, shares_removed);
+    lp.remove_liquidity(pool_key, shares_removed, 0, 0);
 
     let (ekubo_balance0_after, ekubo_balance1_after) = (
         token0.balance_of(core.contract_address), token1.balance_of(core.contract_address),
@@ -1251,7 +1113,7 @@ fn test_remove_liquidity_emits_liquidity_updated_event() {
     let balance1_before = token1.balance_of(core.contract_address);
 
     let mut spy = spy_events();
-    let factor = lp.remove_liquidity(pool_key, shares_removed);
+    let factor = lp.remove_liquidity(pool_key, shares_removed, 0, 0);
 
     let balance0_after = token0.balance_of(core.contract_address);
     let balance1_after = token1.balance_of(core.contract_address);
@@ -1298,7 +1160,7 @@ fn test_remove_liquidity_fails_if_extension_not_liquidity_provider() {
         tick_spacing: 1, // 0.01 bps
         extension: Zero::<ContractAddress>::zero(),
     };
-    lp.remove_liquidity(pool_key, 100000000000000000000);
+    lp.remove_liquidity(pool_key, 100000000000000000000, 0, 0);
 }
 
 #[test]
@@ -1306,7 +1168,7 @@ fn test_remove_liquidity_fails_if_extension_not_liquidity_provider() {
 #[should_panic(expected: ('Pool token not deployed',))]
 fn test_remove_liquidity_fails_if_not_initialized() {
     let (pool_key, lp, _, _, _, _, _) = setup();
-    lp.remove_liquidity(pool_key, 100000000000000000000);
+    lp.remove_liquidity(pool_key, 100000000000000000000, 0, 0);
 }
 
 #[test]
@@ -1388,6 +1250,10 @@ fn two_pow_128() -> u256 {
     340282366920938463463374607431768211456 // 2**128
 }
 
+fn max_u128() -> u128 {
+    340282366920938463463374607431768211455 // 2**128 - 1
+}
+
 fn assert_close(a: u256, b: u256, tol: u256) {
     let (mi, ma): (u256, u256) = if a > b {
         (b, a)
@@ -1455,22 +1321,9 @@ fn setup_harvest_fees(
 
     // add more liquidity to pool
     if add_more_liquidity {
-        let _step = *default_profile_params[2];
-        let _n = *default_profile_params[3];
         let _factor = 10000000000000000000000; // 10000 * 1e18
-        let _amount: u128 = (_step.mag * _n.mag * (_factor)) / (1900000);
-        token0.transfer(lp.contract_address, _amount.into());
-        token1.transfer(lp.contract_address, _amount.into());
-        lp.add_liquidity(pool_key, _factor);
+        lp.add_liquidity(pool_key, _factor, max_u128(), max_u128());
     }
-
-    // sweep any excess amounts in lp
-    ISweepableDispatcher { contract_address: lp.contract_address }
-        .sweep(token0.contract_address, get_contract_address(), 0);
-    ISweepableDispatcher { contract_address: lp.contract_address }
-        .sweep(token1.contract_address, get_contract_address(), 0);
-    assert_eq!(token0.balance_of(lp.contract_address), 0);
-    assert_eq!(token1.balance_of(lp.contract_address), 0);
 
     let fees_delta: Delta = execute_swaps_on_pool(
         pool_key, lp, profile, token0, token1, initial_zero_for_one, amount, n,
@@ -1546,21 +1399,20 @@ fn test_add_liquidity_harvest_fees_adds_liquidity_prior_with_tick_less_than_init
         .total_supply();
 
     // add more liquidity and check shares_added < factor input due to fee harvest
-    let factor: u128 = 10000000000000000000; // 10 * 1e18
     let step = *default_profile_params[2];
     let n = *default_profile_params[3];
-    let amount: u128 = (step.mag * n.mag * (factor)) / (1000000);
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
-    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
-    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
+    let factor: u128 = 10000000000000000000; // 10 * 1e18
 
     // cache balances of owner before to check protocol fees transferred
+    let owner = contract_address_const::<'new_owner'>();
+    let lp_owned: IOwnedDispatcher = IOwnedDispatcher { contract_address: lp.contract_address };
+    lp_owned.transfer_ownership(owner); // transfer ownership to owner
+
     let owner_balance0_before: u256 = token0.balance_of(owner);
     let owner_balance1_before: u256 = token1.balance_of(owner);
 
     // add the liquidity
-    let shares_added = lp.add_liquidity(pool_key, factor);
+    let shares_added = lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
     assert_lt!(shares_added, factor.try_into().unwrap());
 
     let total_shares_after: u256 = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
@@ -1736,21 +1588,21 @@ fn test_add_liquidity_harvest_fees_adds_liquidity_prior_with_tick_greater_than_i
         .total_supply();
 
     // add more liquidity and check shares_added < factor input due to fee harvest
-    let factor: u128 = 10000000000000000000; // 10 * 1e18
     let step = *default_profile_params[2];
     let n = *default_profile_params[3];
-    let amount: u128 = (step.mag * n.mag * (factor)) / (1000000);
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
-    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
-    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
+    let factor: u128 = 10000000000000000000; // 10 * 1e18
+
+    // cache balances of owner before to check protocol fees transferred
+    let owner = contract_address_const::<'new_owner'>();
+    let lp_owned: IOwnedDispatcher = IOwnedDispatcher { contract_address: lp.contract_address };
+    lp_owned.transfer_ownership(owner); // transfer ownership to owner
 
     // cache balances of owner before to check protocol fees transferred
     let owner_balance0_before: u256 = token0.balance_of(owner);
     let owner_balance1_before: u256 = token1.balance_of(owner);
 
     // add the liquidity
-    let shares_added = lp.add_liquidity(pool_key, factor);
+    let shares_added = lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
     assert_lt!(shares_added, factor.try_into().unwrap());
 
     let total_shares_after: u256 = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
@@ -1894,17 +1746,8 @@ fn test_add_liquidity_harvest_fees_sends_excess_to_protocol_when_pool_liquidity_
     assert_gt!(fees_per_liquidity_prior_value1_u256, 0);
 
     // add more liquidity and check shares_added < factor input due to fee harvest
-    // add more liquidity and check shares_added < factor input due to fee harvest
     let factor: u128 = 10000000000000000000; // 10 * 1e18
-    let step = *default_profile_params[2];
-    let n = *default_profile_params[3];
-    let amount: u128 = (step.mag * n.mag * (factor)) / (100000);
-    token0.transfer(lp.contract_address, amount.into());
-    token1.transfer(lp.contract_address, amount.into());
-    assert_eq!(token0.balance_of(lp.contract_address), amount.into());
-    assert_eq!(token1.balance_of(lp.contract_address), amount.into());
-
-    let shares_added = lp.add_liquidity(pool_key, factor);
+    let shares_added = lp.add_liquidity(pool_key, factor, max_u128(), max_u128());
     assert_lt!(shares_added, factor.try_into().unwrap());
 
     let fees_per_liquidity_after: FeesPerLiquidity = core.get_pool_fees_per_liquidity(pool_key);
@@ -2003,7 +1846,7 @@ fn test_remove_liquidity_harvest_fees_adds_liquidity_prior_with_tick_less_than_i
     let owner_balance1_before: u256 = token1.balance_of(owner);
 
     // add the liquidity
-    let factor = lp.remove_liquidity(pool_key, shares_removed);
+    let factor = lp.remove_liquidity(pool_key, shares_removed, 0, 0);
     let total_shares_after: u256 = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
         .total_supply();
     assert_eq!(total_shares_after, total_shares_prior - shares_removed);
@@ -2192,7 +2035,7 @@ fn test_remove_liquidity_harvest_fees_adds_liquidity_prior_with_tick_greater_tha
     let owner_balance1_before: u256 = token1.balance_of(owner);
 
     // add the liquidity
-    let factor = lp.remove_liquidity(pool_key, shares_removed);
+    let factor = lp.remove_liquidity(pool_key, shares_removed, 0, 0);
     let total_shares_after: u256 = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
         .total_supply();
     assert_eq!(total_shares_after, total_shares_prior - shares_removed);
@@ -2296,4 +2139,115 @@ fn test_remove_liquidity_harvest_fees_adds_liquidity_prior_with_tick_greater_tha
             one() / 10000,
         );
     }
+}
+
+#[test]
+#[fork("mainnet")]
+fn test_sweep_transfers_tokens_to_recipient() {
+    let (pool_key, lp, _, _, default_profile_params, token0, token1, fees_delta) =
+        setup_harvest_fees(
+        false, 10000000000000000000, 25, true,
+    );
+
+    // send in tokens to the lp contract
+    token0.transfer(lp.contract_address, 1000000000000000);
+    assert_eq!(token0.balance_of(lp.contract_address), 1000000000000000);
+
+    // sweep tokens to recipient
+    let recipient = contract_address_const::<'recipient'>();
+    lp.sweep(token0.contract_address, recipient, 750000000000000);
+    assert_eq!(token0.balance_of(recipient), 750000000000000);
+    assert_eq!(token0.balance_of(lp.contract_address), 250000000000000);
+}
+
+#[test]
+#[fork("mainnet")]
+#[should_panic(expected: ('OWNER_ONLY',))]
+fn test_sweep_fails_if_not_owner() {
+    let (pool_key, lp, _, _, default_profile_params, token0, token1, fees_delta) =
+        setup_harvest_fees(
+        false, 10000000000000000000, 25, true,
+    );
+
+    // send in tokens to the lp contract
+    token0.transfer(lp.contract_address, 1000000000000000);
+    assert_eq!(token0.balance_of(lp.contract_address), 1000000000000000);
+
+    // cache balances of owner before to check protocol fees transferred
+    let owner = contract_address_const::<'new_owner'>();
+    let lp_owned: IOwnedDispatcher = IOwnedDispatcher { contract_address: lp.contract_address };
+    lp_owned.transfer_ownership(owner); // transfer ownership to owner
+
+    // attempt to sweep with different owner
+    lp.sweep(token0.contract_address, get_contract_address(), 1000000000000000);
+}
+
+#[test]
+#[fork("mainnet")]
+#[should_panic(expected: ('Slippage exceeded on amount0',))]
+fn test_add_liquidity_fails_if_amount0_slippage_exceeded() {
+    let (pool_key, lp, _, profile, default_profile_params, token0, token1, mut fees_delta) =
+        setup_harvest_fees(
+        true, 10000000000000000000, 25, true,
+    );
+    assert_gt!(fees_delta.amount0.mag, 0);
+    assert_gt!(fees_delta.amount1.mag, 0);
+
+    // add more liquidity and check shares_added < factor input due to fee harvest
+    let factor: u128 = 10000000000000000000; // 10 * 1e18
+    lp.add_liquidity(pool_key, factor, 1, max_u128());
+}
+
+#[test]
+#[fork("mainnet")]
+#[should_panic(expected: ('Slippage exceeded on amount1',))]
+fn test_add_liquidity_fails_if_amount1_slippage_exceeded() {
+    let (pool_key, lp, _, profile, default_profile_params, token0, token1, mut fees_delta) =
+        setup_harvest_fees(
+        true, 10000000000000000000, 25, true,
+    );
+    assert_gt!(fees_delta.amount0.mag, 0);
+    assert_gt!(fees_delta.amount1.mag, 0);
+
+    // add more liquidity and check shares_added < factor input due to fee harvest
+    let factor: u128 = 10000000000000000000; // 10 * 1e18
+    lp.add_liquidity(pool_key, factor, max_u128(), 1);
+}
+
+#[test]
+#[fork("mainnet")]
+#[should_panic(expected: ('Slippage exceeded on amount0',))]
+fn test_remove_liquidity_fails_if_amount0_slippage_exceeded() {
+    let (pool_key, lp, _, profile, default_profile_params, token0, token1, mut fees_delta) =
+        setup_harvest_fees(
+        true, 10000000000000000000, 25, true,
+    );
+    assert_gt!(fees_delta.amount0.mag, 0);
+    assert_gt!(fees_delta.amount1.mag, 0);
+
+    let shares = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
+        .balance_of(get_contract_address());
+    let shares_removed = shares / 4;
+
+    // add more liquidity and check shares_added < factor input due to fee harvest
+    lp.remove_liquidity(pool_key, shares_removed, max_u128(), 0);
+}
+
+#[test]
+#[fork("mainnet")]
+#[should_panic(expected: ('Slippage exceeded on amount1',))]
+fn test_remove_liquidity_fails_if_amount1_slippage_exceeded() {
+    let (pool_key, lp, _, profile, default_profile_params, token0, token1, mut fees_delta) =
+        setup_harvest_fees(
+        true, 10000000000000000000, 25, true,
+    );
+    assert_gt!(fees_delta.amount0.mag, 0);
+    assert_gt!(fees_delta.amount1.mag, 0);
+
+    let shares = IERC20Dispatcher { contract_address: lp.pool_token(pool_key) }
+        .balance_of(get_contract_address());
+    let shares_removed = shares / 4;
+
+    // add more liquidity and check shares_added < factor input due to fee harvest
+    lp.remove_liquidity(pool_key, shares_removed, 0, max_u128());
 }

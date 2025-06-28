@@ -1,6 +1,6 @@
 [package]
 name = "spline_v0"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2024_07"
 
 # See more keys and their definitions at https://docs.swmansion.com/scarb/docs/reference/manifest.html
@@ -13,7 +13,7 @@ openzeppelin_utils = "1.0.0"
 starknet = "2.11.2"
 
 [dev-dependencies]
-snforge_std = "0.40.0"
+snforge_std = "0.43.1"
 assert_macros = "2.11.2"
 
 [[tool.snforge.fork]]
