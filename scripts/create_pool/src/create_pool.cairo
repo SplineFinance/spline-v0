@@ -26,11 +26,11 @@ fn main() {
         i129 { mag: 1000, sign: false },
         i129 { mag: 4, sign: false },
         i129 { mag: 0, sign: false },
-        i129 { mag: 16000, sign: false },
+        i129 { mag: 50000, sign: false },
         i129 { mag: 100000000, sign: false },
         i129 { mag: 0, sign: false },
-        i129 { mag: 2000, sign: false },
-        i129 { mag: 64000, sign: false },
+        i129 { mag: 4000, sign: false },
+        i129 { mag: 128000, sign: false },
     ]
         .span();
 
