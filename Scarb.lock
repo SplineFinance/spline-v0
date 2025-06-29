@@ -69,9 +69,9 @@ checksum = "sha256:fd348b31c4a4407add33adc3c2b8f26dca71dbd7431faaf726168f37a91db
 
 [[package]]
 name = "sncast_std"
-version = "0.40.0"
+version = "0.43.1"
 source = "registry+https://scarbs.xyz/"
-checksum = "sha256:7f5cf0eae57f51ef6048765c48d551e82acc6169a5b9a9688018df4cbf0b92b3"
+checksum = "sha256:f40aee4c53a3752063cd4bcb0dd154f1046edceb293fc0cbcff5ed6539947771"
 
 [[package]]
 name = "snforge_scarb_plugin"

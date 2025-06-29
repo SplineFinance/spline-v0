@@ -6,9 +6,9 @@ use sncast_std::{DeclareResultTrait, FeeSettingsTrait, call, declare, deploy, ge
 // The example below uses a contract deployed to the Starknet
 const LP_ADDRESS: felt252 = 0x051c07feabac66eaa325ac111f364428bfb9c6e6df072df54589db33be76b528;
 const TOKEN0_ADDRESS: felt252 =
-    0x03fe2b97c1fd336e750087d68b9b867997fd64a2661ff3ca5a7c771641e8e7ac; // TODO: replace
+    0x03fe2b97c1fd336e750087d68b9b867997fd64a2661ff3ca5a7c771641e8e7ac; // WBTC
 const TOKEN1_ADDRESS: felt252 =
-    0x0577bddfccc35c714e99638d4f03ee6bc51e38895c7abc4df1b1e1ab4854b2ce; // TODO: replace
+    0x0577bddfccc35c714e99638d4f03ee6bc51e38895c7abc4df1b1e1ab4854b2ce; // WWBTC
 
 fn main() {
     let fee_settings = FeeSettingsTrait::max_fee(99999999999999999999);
@@ -16,21 +16,21 @@ fn main() {
         token0: TOKEN0_ADDRESS.try_into().unwrap(),
         token1: TOKEN1_ADDRESS.try_into().unwrap(),
         fee: 34028236692093846346337460743176821, // 1 bps
-        tick_spacing: 1,
+        tick_spacing: 10, // 0.1 bps
         extension: LP_ADDRESS.try_into().unwrap(),
     };
     let initial_tick = i129 { mag: 0, sign: false };
 
     // s, res, tick_start, tick_max, l0, mu, gamma, rho
     let params = array![
-        i129 { mag: 1000, sign: false },
+        i129 { mag: 1000, sign: false }, // 10 bps
         i129 { mag: 4, sign: false },
         i129 { mag: 0, sign: false },
-        i129 { mag: 50000, sign: false },
+        i129 { mag: 100000, sign: false }, // 1000 bps
         i129 { mag: 100000000, sign: false },
         i129 { mag: 0, sign: false },
-        i129 { mag: 4000, sign: false },
-        i129 { mag: 128000, sign: false },
+        i129 { mag: 4000, sign: false }, // 40 bps
+        i129 { mag: 128000, sign: false }, // 1280 bps
     ]
         .span();
 
