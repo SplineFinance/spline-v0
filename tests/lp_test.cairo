@@ -462,6 +462,8 @@ fn test_create_and_initialize_pool_emits_liquidity_updated_event() {
                     lp.contract_address,
                     LiquidityProvider::Event::LiquidityUpdated(
                         LiquidityProvider::LiquidityUpdated {
+                            indexed_pool_key: pool_key,
+                            indexed_sender: get_contract_address(),
                             pool_key: pool_key,
                             sender: get_contract_address(),
                             liquidity_factor: initial_liquidity_factor,
@@ -803,6 +805,8 @@ fn test_add_liquidity_emits_liquidity_updated_event() {
                     lp.contract_address,
                     LiquidityProvider::Event::LiquidityUpdated(
                         LiquidityProvider::LiquidityUpdated {
+                            indexed_pool_key: pool_key,
+                            indexed_sender: get_contract_address(),
                             pool_key: pool_key,
                             sender: get_contract_address(),
                             liquidity_factor: liquidity_factor_delta,
@@ -1133,6 +1137,8 @@ fn test_remove_liquidity_emits_liquidity_updated_event() {
                     lp.contract_address,
                     LiquidityProvider::Event::LiquidityUpdated(
                         LiquidityProvider::LiquidityUpdated {
+                            indexed_pool_key: pool_key,
+                            indexed_sender: get_contract_address(),
                             pool_key: pool_key,
                             sender: get_contract_address(),
                             liquidity_factor: liquidity_factor_delta,
