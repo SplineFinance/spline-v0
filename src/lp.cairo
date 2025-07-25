@@ -145,9 +145,7 @@ pub mod LiquidityProvider {
 
     #[derive(Drop, starknet::Event)]
     pub struct LiquidityUpdated {
-        #[key]
         pub pool_key: PoolKey,
-        #[key]
         pub sender: ContractAddress,
         pub liquidity_factor: i129,
         pub shares: u256,
