@@ -164,7 +164,7 @@ fn test_constructor_sets_callpoints() {
         CallPoints {
             before_initialize_pool: true,
             after_initialize_pool: false,
-            before_swap: false,
+            before_swap: true,
             after_swap: false,
             before_update_position: true,
             after_update_position: false,

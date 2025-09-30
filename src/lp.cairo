@@ -180,7 +180,7 @@ pub mod LiquidityProvider {
                 CallPoints {
                     before_initialize_pool: true,
                     after_initialize_pool: false,
-                    before_swap: false,
+                    before_swap: true,
                     after_swap: false,
                     before_update_position: true,
                     after_update_position: false,
@@ -773,7 +773,9 @@ pub mod LiquidityProvider {
             pool_key: PoolKey,
             params: SwapParameters,
         ) {
-            panic!("Not used");
+            // compound fees if possible. also checks pool key and pool initialized
+            // @dev prevents malicious harvest of fees via pool reserve manipulation
+            self.compound_fees(pool_key);
         }
 
         fn after_swap(
